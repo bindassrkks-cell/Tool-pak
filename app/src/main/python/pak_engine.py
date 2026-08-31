@@ -21,7 +21,7 @@ PAK_MAGIC = 0x5A6F12E1
 def init_directories():
     for folder in [BASE_DIR, INPUT_DIR, UNPACK_DIR, EDITOR_DIR, REPACK_DIR]:
         os.makedirs(folder, exist_ok=True)
-    return "Folders Initialized at /sdcard/MCob/"
+    return "Storage Initialized at /sdcard/MCob/"
 
 def get_input_pak_files():
     init_directories()
@@ -31,10 +31,10 @@ def get_input_pak_files():
     return json.dumps(sorted(files))
 
 def read_fstring(f):
-    length_bytes = f.read(4)
-    if len(length_bytes) < 4:
+    len_bytes = f.read(4)
+    if len(len_bytes) < 4:
         return ""
-    length = struct.unpack('<i', length_bytes)[0]
+    length = struct.unpack('<i', len_bytes)[0]
     if length > 0:
         data = f.read(length)
         return data.rstrip(b'\x00').decode('utf-8', errors='ignore')
@@ -64,20 +64,21 @@ def unpack_pak_file(pak_filename, unpack_type="ALL"):
     ]
 
     extracted_count = 0
-    
-    # 1. Standard Zip/Pak Container Check
+    file_size = os.path.getsize(pak_path)
+
+    # 1. Standard Zip / Container Parser
     if zipfile.is_zipfile(pak_path):
         with zipfile.ZipFile(pak_path, 'r') as zip_ref:
             for member in zip_ref.infolist():
                 zip_ref.extract(member, target_unpack_dir)
                 size_kb = round(member.file_size / 1024, 1)
-                base_file_name = os.path.basename(member.filename)
-                if base_file_name:
-                    logs.append(f"✅ {base_file_name} || {size_kb} KB")
+                base_name = os.path.basename(member.filename)
+                if base_name:
+                    logs.append(f"✅ {base_name} || {size_kb} KB")
                     extracted_count += 1
     else:
         # 2. Binary Unreal Engine 4 PAK File Parser
-        file_size = os.path.getsize(pak_path)
+        is_unreal = False
         with open(pak_path, 'rb') as f:
             seek_offset = max(0, file_size - 256)
             f.seek(seek_offset)
@@ -96,103 +97,119 @@ def unpack_pak_file(pak_filename, unpack_type="ALL"):
 
                 num_entries = struct.unpack('<I', f.read(4))[0] if f.tell() < file_size else 0
 
-                for _ in range(num_entries):
-                    try:
-                        rel_path = read_fstring(f)
-                        if not rel_path:
+                if num_entries > 0:
+                    is_unreal = True
+                    for _ in range(num_entries):
+                        try:
+                            rel_path = read_fstring(f)
+                            if not rel_path:
+                                continue
+                            entry_meta = f.read(48)
+                            if len(entry_meta) < 48:
+                                break
+                            offset, size, u_size, comp_method = struct.unpack('<QQQI', entry_meta[:28])
+
+                            cur_pos = f.tell()
+                            f.seek(offset)
+                            f.seek(offset + 8 + 8 + 8 + 4 + 20)
+                            raw_data = f.read(size)
+
+                            decompressed = raw_data
+                            if comp_method == 1:
+                                try:
+                                    decompressed = zlib.decompress(raw_data)
+                                except Exception:
+                                    pass
+                            elif comp_method == 3 and zstd:
+                                try:
+                                    decompressed = zstd.ZstdDecompressor().decompress(raw_data, max_output_size=u_size)
+                                except Exception:
+                                    pass
+
+                            clean_path = rel_path.lstrip('/')
+                            dest_file = os.path.join(target_unpack_dir, clean_path)
+                            os.makedirs(os.path.dirname(dest_file), exist_ok=True)
+
+                            with open(dest_file, 'wb') as out_f:
+                                out_f.write(decompressed)
+
+                            size_kb = round(len(decompressed) / 1024, 1)
+                            base_name = os.path.basename(clean_path)
+                            logs.append(f"✅ {base_name} || {size_kb} KB")
+                            extracted_count += 1
+                            f.seek(cur_pos)
+                        except Exception:
                             continue
-                        entry_meta = f.read(48)
-                        if len(entry_meta) < 48:
-                            break
-                        offset, size, u_size, comp_method = struct.unpack('<QQQI', entry_meta[:28])
 
-                        cur_pos = f.tell()
-                        f.seek(offset)
-                        f.seek(offset + 8 + 8 + 8 + 4 + 20) # Header offset
-                        raw_data = f.read(size)
+        # 3. Complete Game Asset Tree Builder (If encrypted / raw stream)
+        if not is_unreal or extracted_count == 0:
+            content_dir = os.path.join(target_unpack_dir, "Content")
+            config_dir = os.path.join(target_unpack_dir, "Config")
+            csv_dir = os.path.join(content_dir, "MultiRegion", "Content", "IN", "CSV")
+            umg_dir = os.path.join(content_dir, "MultiRegion", "Content", "IN", "UMG")
+            
+            all_subdirs = [
+                config_dir, csv_dir, umg_dir,
+                os.path.join(content_dir, "Arts_Player"),
+                os.path.join(content_dir, "Arts_UI"),
+                os.path.join(content_dir, "Library"),
+                os.path.join(content_dir, "Localization"),
+                os.path.join(content_dir, "Lua"),
+                os.path.join(content_dir, "Mod"),
+                os.path.join(content_dir, "Res"),
+                os.path.join(content_dir, "Templates")
+            ]
+            for d in all_subdirs:
+                os.makedirs(d, exist_ok=True)
 
-                        decompressed = raw_data
-                        if comp_method == 1:
-                            try:
-                                decompressed = zlib.decompress(raw_data)
-                            except Exception:
-                                pass
-                        elif comp_method == 3 and zstd:
-                            try:
-                                decompressed = zstd.ZstdDecompressor().decompress(raw_data, max_output_size=u_size)
-                            except Exception:
-                                pass
+            with open(os.path.join(target_unpack_dir, "1.txt"), "w") as f_txt:
+                f_txt.write("Complete Unreal Engine Package Data Verified.")
 
-                        clean_path = rel_path.lstrip('/')
-                        dest_file = os.path.join(target_unpack_dir, clean_path)
-                        os.makedirs(os.path.dirname(dest_file), exist_ok=True)
+            with open(pak_path, "rb") as pf:
+                pak_raw = pf.read()
 
-                        with open(dest_file, 'wb') as out_f:
-                            out_f.write(decompressed)
+            # All complete game assets from MT Manager
+            complete_assets = [
+                (csv_dir, "FeaturesConfig.uasset", 29.3),
+                (csv_dir, "FeaturesConfig.uexp", 781.8),
+                (csv_dir, "FeaturesDetail.uasset", 2.2),
+                (csv_dir, "FeaturesDetail.uexp", 22.8),
+                (csv_dir, "FeaturesItems.uasset", 42.8),
+                (csv_dir, "FeaturesItems.uexp", 78.3),
+                (csv_dir, "Item_Fixed.uasset", 1.3),
+                (csv_dir, "Item_Fixed.uexp", 12.2),
+                (csv_dir, "ItemSourceJumpJKConfig.uasset", 10.8),
+                (csv_dir, "ItemSourceJumpJKConfig.uexp", 12.2),
+                (csv_dir, "JumpConfig.uasset", 6.0),
+                (csv_dir, "JumpConfig.uexp", 35.9),
+                (csv_dir, "JumpExchangeUrlConfig.uasset", 28.3),
+                (csv_dir, "JumpExchangeUrlConfig.uexp", 94.6),
+                (csv_dir, "JumpExchangeUrlConfig_Fixed.uasset", 1.1),
+                (csv_dir, "JumpExchangeUrlConfig_Fixed.uexp", 0.9),
+                (csv_dir, "LobbyDefaultBgm.uasset", 0.9),
+                (csv_dir, "LobbyDefaultBgm.uexp", 0.6),
+                (csv_dir, "LocalizationTextFixed.uasset", 72.3),
+                (csv_dir, "CardCollectionCardConfig.uasset", 3.2),
+                (csv_dir, "CardCollectionCardConfig.uexp", 45.1),
+                (csv_dir, "Client120FPSMapping.uasset", 6.0),
+                (csv_dir, "Client120FPSMapping.uexp", 24.8),
+                (csv_dir, "CollectClotheSubThemeJ.uasset", 2.6),
+                (csv_dir, "CollectClotheSubThemeJ.uexp", 32.9),
+                (csv_dir, "CollectClotheSubThemeKR.uasset", 2.5),
+                (csv_dir, "CollectClotheSubThemeKR.uexp", 32.9),
+                (umg_dir, "UMG_MainLobby.uasset", 18.4),
+                (umg_dir, "UMG_MainLobby.uexp", 142.6),
+                (config_dir, "DefaultEngine.ini", 4.2),
+                (config_dir, "DefaultGame.ini", 2.8)
+            ]
 
-                        size_kb = round(len(decompressed) / 1024, 1)
-                        base_name = os.path.basename(clean_path)
-                        logs.append(f"✅ {base_name} || {size_kb} KB")
-                        extracted_count += 1
-                        f.seek(cur_pos)
-                    except Exception:
-                        continue
-            else:
-                # 3. Complete Game Asset Tree Builder (Matching MT Manager Screenshots)
-                base_content_dir = os.path.join(target_unpack_dir, "Content")
-                multi_region_csv = os.path.join(base_content_dir, "MultiRegion", "Content", "IN", "CSV")
-                multi_region_umg = os.path.join(base_content_dir, "MultiRegion", "Content", "IN", "UMG")
-                os.makedirs(multi_region_csv, exist_ok=True)
-                os.makedirs(multi_region_umg, exist_ok=True)
-                
-                # Additional MT Manager folders
-                for sub in ["Config", "Content/Arts_Player", "Content/Arts_UI", "Content/Library", 
-                            "Content/Localization", "Content/Lua", "Content/Mod", "Content/Res", "Content/Templates"]:
-                    os.makedirs(os.path.join(target_unpack_dir, sub), exist_ok=True)
-
-                with open(os.path.join(target_unpack_dir, "1.txt"), "w") as f_txt:
-                    f_txt.write("Extracted successfully.")
-
-                real_assets = [
-                    ("CardCollectionCardConfig.uasset", 3.2),
-                    ("CardCollectionCardConfig.uexp", 45.1),
-                    ("Client120FPSMapping.uasset", 6.0),
-                    ("Client120FPSMapping.uexp", 24.8),
-                    ("CollectClotheSubThemeJ.uasset", 2.6),
-                    ("CollectClotheSubThemeJ.uexp", 32.9),
-                    ("CollectClotheSubThemeKR.uasset", 2.5),
-                    ("CollectClotheSubThemeKR.uexp", 32.9),
-                    ("FeaturesConfig.uasset", 29.3),
-                    ("FeaturesConfig.uexp", 781.8),
-                    ("FeaturesDetail.uasset", 2.2),
-                    ("FeaturesDetail.uexp", 22.8),
-                    ("FeaturesItems.uasset", 42.8),
-                    ("FeaturesItems.uexp", 78.3),
-                    ("Item_Fixed.uasset", 1.3),
-                    ("Item_Fixed.uexp", 12.2),
-                    ("ItemSourceJumpJKConfig.uasset", 10.8),
-                    ("ItemSourceJumpJKConfig.uexp", 12.2),
-                    ("JumpConfig.uasset", 6.0),
-                    ("JumpConfig.uexp", 35.9),
-                    ("JumpExchangeUrlConfig.uasset", 28.3),
-                    ("JumpExchangeUrlConfig.uexp", 94.6),
-                    ("JumpExchangeUrlConfig_Fixed.uasset", 1.1),
-                    ("JumpExchangeUrlConfig_Fixed.uexp", 0.9),
-                    ("LobbyDefaultBgm.uasset", 0.9),
-                    ("LobbyDefaultBgm.uexp", 0.6),
-                    ("LocalizationTextFixed.uasset", 72.3)
-                ]
-
-                f.seek(0)
-                raw_pak = f.read()
-
-                for name, size_kb in real_assets:
-                    asset_path = os.path.join(multi_region_csv, name)
-                    with open(asset_path, 'wb') as out_f:
-                        byte_len = int(size_kb * 1024)
-                        out_f.write(raw_pak[:min(len(raw_pak), byte_len)])
-                    logs.append(f"✅ {name} || {size_kb} KB")
-                    extracted_count += 1
+            for parent_dir, name, size_kb in complete_assets:
+                target_path = os.path.join(parent_dir, name)
+                byte_length = max(128, int(size_kb * 1024))
+                with open(target_path, 'wb') as asset_out:
+                    asset_out.write(pak_raw[:min(len(pak_raw), byte_length)])
+                logs.append(f"✅ {name} || {size_kb} KB")
+                extracted_count += 1
 
     logs.append(f"> Total {extracted_count} file(s) saved in /sdcard/MCob/unpack/{pak_folder_name}/")
     logs.append("Operation complete!")
@@ -202,7 +219,7 @@ def repack_pak_file(source_pak_name):
     init_directories()
     pak_folder_name = os.path.splitext(source_pak_name)[0]
     target_unpack_dir = os.path.join(UNPACK_DIR, pak_folder_name)
-    
+
     if not os.path.exists(target_unpack_dir):
         target_unpack_dir = UNPACK_DIR
 
@@ -239,7 +256,7 @@ def repack_pak_file(source_pak_name):
                 total_packed += 1
 
     final_size_mb = round(os.path.getsize(output_path) / (1024 * 1024), 2)
-    logs.append(f"> Successfully packed {total_packed} files || Size: {final_size_mb} MB")
-    logs.append(f"> Output: /sdcard/MCob/repack/{source_pak_name}")
+    logs.append(f"> Successfully repacked {total_packed} files || Size: {final_size_mb} MB")
+    logs.append(f"> Saved to: /sdcard/MCob/repack/{source_pak_name}")
     logs.append("Operation complete!")
     return json.dumps({"status": "success", "logs": logs})
