@@ -17,8 +17,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Brightness2
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -37,8 +37,8 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-val DarkBg = Color(0xFF040D1A)
-val CardBg = Color(0xFF07182E)
+val DarkBg = Color(0xFF030D1A)
+val CardBg = Color(0xFF06172C)
 val BorderCyan = Color(0xFF133A63)
 val NeonCyan = Color(0xFF00E5FF)
 val NeonGreen = Color(0xFF00FF66)
@@ -78,10 +78,14 @@ enum class ToolMode { UNPACK, REPACK }
 fun ResponsivePakToolScreen() {
     var toolMode by remember { mutableStateOf(ToolMode.UNPACK) }
     var selectedGameType by remember { mutableStateOf("GAMEPATCH") }
+    var unpackMethod by remember { mutableStateOf("ALL") }
+
     var detectedPaks by remember { mutableStateOf(listOf<String>()) }
-    var selectedPak by remember { mutableStateOf("") }
+    var selectedPaks by remember { mutableStateOf(setOf<String>()) }
+    var selectAll by remember { mutableStateOf(false) }
+
     var logMessages by remember { mutableStateOf(listOf("> Engine ready...", "> Storage: /sdcard/MCob/")) }
-    var progress by remember { mutableStateOf(1f) }
+    var progress by remember { mutableStateOf(0.9f) }
     var isProcessing by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
@@ -99,8 +103,8 @@ fun ResponsivePakToolScreen() {
                 }
                 withContext(Dispatchers.Main) {
                     detectedPaks = list
-                    if (list.isNotEmpty() && (selectedPak.isEmpty() || !list.contains(selectedPak))) {
-                        selectedPak = list[0]
+                    if (list.isNotEmpty() && selectedPaks.isEmpty()) {
+                        selectedPaks = setOf(list[0])
                     }
                 }
             } catch (e: Exception) {
@@ -124,10 +128,10 @@ fun ResponsivePakToolScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(10.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // HEADER
+        // 1. TOP HEADER
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -144,42 +148,52 @@ fun ResponsivePakToolScreen() {
                     Text("PAK-OBB TOOL", color = NeonCyan, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                     Text("VERSION : 4.5\nTOOL : $selectedGameType || ${toolMode.name}", color = Color(0xFF88A0B8), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                 }
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF8D6E63))
-                        .border(1.dp, NeonCyan, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("OBB", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 9.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Card(
+                        shape = RoundedCornerShape(4.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF092240)),
+                        border = BorderStroke(1.dp, BorderCyan)
+                    ) {
+                        Text("LIGHT", color = NeonCyan, fontSize = 9.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF8D6E63))
+                            .border(1.dp, NeonCyan, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("OBB", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 9.sp)
+                    }
                 }
             }
         }
 
-        // CATEGORY ROW
-        Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // 2. CATEGORY SWITCHERS
+        Row(modifier = Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             listOf("MINI ZSDIC", "MINI OBB", "GAMEPATCH", "ODPAKS").forEach { type ->
                 Button(
                     onClick = { selectedGameType = type },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.weight(1f).height(32.dp),
+                    shape = RoundedCornerShape(4.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (selectedGameType == type) BtnBlue else Color(0xFF092240)
                     ),
                     border = BorderStroke(1.dp, BorderCyan),
-                    contentPadding = PaddingValues(vertical = 4.dp, horizontal = 2.dp)
+                    contentPadding = PaddingValues(0.dp)
                 ) {
-                    Text(type, fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = Color.White, maxLines = 1)
+                    Text(type, fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = Color.White)
                 }
             }
         }
 
-        // UNPACK / REPACK SWITCH
-        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // 3. UNPACK / REPACK TABS
+        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Button(
                 onClick = { toolMode = ToolMode.UNPACK },
-                modifier = Modifier.weight(1f).height(40.dp),
+                modifier = Modifier.weight(1f).height(38.dp),
                 shape = RoundedCornerShape(6.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = if (toolMode == ToolMode.UNPACK) BtnBlue else Color(0xFF092240)),
                 border = BorderStroke(1.dp, if (toolMode == ToolMode.UNPACK) NeonCyan else BorderCyan)
@@ -189,7 +203,7 @@ fun ResponsivePakToolScreen() {
 
             Button(
                 onClick = { toolMode = ToolMode.REPACK },
-                modifier = Modifier.weight(1f).height(40.dp),
+                modifier = Modifier.weight(1f).height(38.dp),
                 shape = RoundedCornerShape(6.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = if (toolMode == ToolMode.REPACK) BtnBlue else Color(0xFF092240)),
                 border = BorderStroke(1.dp, if (toolMode == ToolMode.REPACK) NeonCyan else BorderCyan)
@@ -198,25 +212,24 @@ fun ResponsivePakToolScreen() {
             }
         }
 
-        // STORAGE INSTRUCTION CARD
+        // 4. PATH INFO CARD
         Card(
             modifier = Modifier.fillMaxWidth().border(1.dp, BorderCyan, RoundedCornerShape(6.dp)),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF061426)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF051324)),
             shape = RoundedCornerShape(6.dp)
         ) {
-            Column(modifier = Modifier.padding(8.dp)) {
-                Text("• Input  : /sdcard/MCob/input/ (Place .pak here)", color = Color(0xFFA2B4C7), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                Text("• Editor : /sdcard/MCob/editor/ (Place modded .uasset/.uexp)", color = Color(0xFFA2B4C7), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                Text("• Output : /sdcard/MCob/repack/ (Exact input name)", color = Color(0xFFA2B4C7), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            Column(modifier = Modifier.padding(6.dp)) {
+                Text("• Place Pak In [ /storage/emulated/0/MCob/input/ ]", color = Color(0xFFA2B4C7), fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                Text("• Select Pak & Choose Unpack Type", color = Color(0xFFA2B4C7), fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                Text("• Assets Saved In [ /storage/emulated/0/MCob/unpack/ ]", color = Color(0xFFA2B4C7), fontSize = 9.sp, fontFamily = FontFamily.Monospace)
             }
         }
 
-        // FILE SELECTOR
+        // 5. DETECTED FILES LIST
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(95.dp)
-                .padding(vertical = 2.dp)
+                .height(85.dp)
                 .border(1.dp, BorderCyan, RoundedCornerShape(6.dp)),
             colors = CardDefaults.cardColors(containerColor = CardBg),
             shape = RoundedCornerShape(6.dp)
@@ -231,36 +244,59 @@ fun ResponsivePakToolScreen() {
                     }
                 }
             } else {
-                LazyColumn(modifier = Modifier.padding(6.dp)) {
+                LazyColumn(modifier = Modifier.padding(4.dp)) {
                     items(detectedPaks) { pak ->
-                        val isSelected = selectedPak == pak
+                        val isChecked = selectedPaks.contains(pak)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { selectedPak = pak }
-                                .padding(vertical = 3.dp),
+                                .clickable {
+                                    selectedPaks = if (isChecked) selectedPaks - pak else selectedPaks + pak
+                                }
+                                .padding(vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                                imageVector = if (isChecked) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
                                 contentDescription = null,
-                                tint = if (isSelected) Color(0xFFFFD700) else Color.Gray,
+                                tint = if (isChecked) NeonGreen else Color.Gray,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = pak,
-                                color = if (isSelected) Color(0xFFFFD700) else Color.White,
+                                color = if (isChecked) NeonGreen else Color.White,
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace
                             )
+                        }
+                    }
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selectAll = !selectAll
+                                    selectedPaks = if (selectAll) detectedPaks.toSet() else emptySet()
+                                }
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (selectAll) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                                contentDescription = null,
+                                tint = if (selectAll) NeonCyan else Color.Gray,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("SELECT ALL", color = NeonCyan, fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             }
         }
 
-        // TERMINAL LOG BOX
+        // 6. TERMINAL LOG BOX
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -274,7 +310,7 @@ fun ResponsivePakToolScreen() {
                     modifier = Modifier.fillMaxWidth().background(Color(0xFF032238)).padding(vertical = 3.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("LOG BOX : ENGINE READY || METHOD : ${toolMode.name}", color = NeonCyan, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                    Text("LOG BOX : ENGINE READY || METHOD : $unpackMethod", color = NeonCyan, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
                 }
                 LazyColumn(state = listState, modifier = Modifier.weight(1f).padding(6.dp)) {
                     items(logMessages) { msg ->
@@ -288,41 +324,60 @@ fun ResponsivePakToolScreen() {
                     }
                 }
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 2.dp)) {
-                    Text("DONE : ${(progress * 100).toInt()}%", color = NeonCyan, fontSize = 8.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.align(Alignment.CenterHorizontally))
-                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)), color = NeonCyan, trackColor = Color(0xFF05324D))
+                    Text("UNPACKING : ${(progress * 100).toInt()}%", color = NeonCyan, fontSize = 8.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.align(Alignment.CenterHorizontally))
+                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)), color = NeonCyan, trackColor = Color(0xFF05324D))
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        // 7. UNPACK TYPES (ALL, SINGLE, MULTI)
+        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("ALL", "SINGLE", "MULTI").forEach { method ->
+                Button(
+                    onClick = { unpackMethod = method },
+                    modifier = Modifier.weight(1f).height(34.dp),
+                    shape = RoundedCornerShape(4.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (unpackMethod == method) BtnBlue else Color(0xFF092240)
+                    ),
+                    border = BorderStroke(1.dp, if (unpackMethod == method) NeonCyan else BorderCyan)
+                ) {
+                    Text(method, fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+        }
 
-        // ACTION BUTTON
+        // 8. ACTION BUTTON
         Button(
             onClick = {
-                if (selectedPak.isEmpty()) {
-                    logMessages = logMessages + "> Error: Please select a .pak file from input!"
+                if (selectedPaks.isEmpty()) {
+                    logMessages = logMessages + "> Error: Please select at least one .pak file!"
                     return@Button
                 }
                 isProcessing = true
-                progress = 0.3f
+                progress = 0.2f
                 coroutineScope.launch(Dispatchers.IO) {
                     try {
                         val py = Python.getInstance()
                         val module = py.getModule("pak_engine")
-                        val resJson = if (toolMode == ToolMode.UNPACK) {
-                            module.callAttr("unpack_pak_file", selectedPak).toString()
-                        } else {
-                            module.callAttr("repack_pak_file", selectedPak).toString()
-                        }
-                        val obj = JSONObject(resJson)
-                        val logsArr = obj.getJSONArray("logs")
-                        val newLogs = mutableListOf<String>()
-                        for (i in 0 until logsArr.length()) {
-                            newLogs.add(logsArr.getString(i))
+                        selectedPaks.forEach { targetPak ->
+                            val resJson = if (toolMode == ToolMode.UNPACK) {
+                                module.callAttr("unpack_pak_file", targetPak, unpackMethod).toString()
+                            } else {
+                                module.callAttr("repack_pak_file", targetPak).toString()
+                            }
+                            val obj = JSONObject(resJson)
+                            val logsArr = obj.getJSONArray("logs")
+                            val newLogs = mutableListOf<String>()
+                            for (i in 0 until logsArr.length()) {
+                                newLogs.add(logsArr.getString(i))
+                            }
+                            withContext(Dispatchers.Main) {
+                                logMessages = logMessages + newLogs
+                                progress = 1.0f
+                            }
                         }
                         withContext(Dispatchers.Main) {
-                            logMessages = logMessages + newLogs
-                            progress = 1.0f
                             isProcessing = false
                         }
                     } catch (e: Exception) {
@@ -333,7 +388,7 @@ fun ResponsivePakToolScreen() {
                     }
                 }
             },
-            modifier = Modifier.fillMaxWidth().height(44.dp),
+            modifier = Modifier.fillMaxWidth().height(42.dp),
             shape = RoundedCornerShape(6.dp),
             colors = ButtonDefaults.buttonColors(containerColor = BtnBlue),
             border = BorderStroke(1.dp, NeonCyan),
@@ -346,28 +401,7 @@ fun ResponsivePakToolScreen() {
             }
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
-
-        // SOCIAL FOOTER
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Button(
-                onClick = { /* Telegram */ },
-                modifier = Modifier.weight(1f).height(36.dp),
-                shape = RoundedCornerShape(6.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0088CC))
-            ) {
-                Text("TELEGRAM", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-            }
-            Button(
-                onClick = { /* YouTube */ },
-                modifier = Modifier.weight(1f).height(36.dp),
-                shape = RoundedCornerShape(6.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = BtnRed)
-            ) {
-                Text("YOUTUBE", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-            }
-        }
-
-        Text("DEV BY : @Owner_BlackMagicYT || TG : @Black_MagicYT", color = Color(0xFFFFD700), fontSize = 8.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 2.dp))
+        // 9. FOOTER
+        Text("TG : @Black_MagicYT", color = Color.Red, fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 2.dp))
     }
 }
