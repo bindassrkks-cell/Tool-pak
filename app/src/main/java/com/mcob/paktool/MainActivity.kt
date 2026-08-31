@@ -8,7 +8,6 @@ import android.os.Environment
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,7 +37,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-// Screenshot Colors (Cyberpunk Dark Navy Theme)
 val DarkBg = Color(0xFF040D1A)
 val CardBg = Color(0xFF07182E)
 val BorderCyan = Color(0xFF133A63)
@@ -51,21 +49,18 @@ val BtnRed = Color(0xFFC62828)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        requestAllFilesPermission()
+        requestStoragePermission()
 
         setContent {
-            PakAppTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = DarkBg
-                ) {
-                    MainScreen()
+            MaterialTheme(colorScheme = darkColorScheme(background = DarkBg, surface = CardBg)) {
+                Surface(modifier = Modifier.fillMaxSize(), color = DarkBg) {
+                    ResponsivePakToolScreen()
                 }
             }
         }
     }
 
-    private fun requestAllFilesPermission() {
+    private fun requestStoragePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (!Environment.isExternalStorageManager()) {
                 val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
@@ -77,37 +72,22 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable
-fun PakAppTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = darkColorScheme(
-            background = DarkBg,
-            surface = CardBg,
-            primary = NeonCyan
-        ),
-        content = content
-    )
-}
-
-enum class ScreenState { MENU, PAK_TOOL, LUA_TOOL }
 enum class ToolMode { UNPACK, REPACK }
 
 @Composable
-fun MainScreen() {
-    var currentScreen by remember { mutableStateOf(ScreenState.PAK_TOOL) }
-    var toolMode by remember { mutableStateOf(ToolMode.REPACK) }
+fun ResponsivePakToolScreen() {
+    var toolMode by remember { mutableStateOf(ToolMode.UNPACK) }
     var selectedGameType by remember { mutableStateOf("GAMEPATCH") }
-
     var detectedPaks by remember { mutableStateOf(listOf<String>()) }
     var selectedPak by remember { mutableStateOf("") }
-    var logMessages by remember { mutableStateOf(listOf("> Engine ready...", "> Storage initialized: /sdcard/MCob/")) }
+    var logMessages by remember { mutableStateOf(listOf("> Engine ready...", "> Storage: /sdcard/MCob/")) }
     var progress by remember { mutableStateOf(1f) }
     var isProcessing by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
-    fun scanPaks() {
+    fun scanInputPaks() {
         coroutineScope.launch(Dispatchers.IO) {
             try {
                 val py = Python.getInstance()
@@ -125,23 +105,29 @@ fun MainScreen() {
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    logMessages = logMessages + "Error scanning: ${e.localizedMessage}"
+                    logMessages = logMessages + "Scan Error: ${e.localizedMessage}"
                 }
             }
         }
     }
 
     LaunchedEffect(Unit) {
-        scanPaks()
+        scanInputPaks()
+    }
+
+    LaunchedEffect(logMessages.size) {
+        if (logMessages.isNotEmpty()) {
+            listState.animateScrollToItem(logMessages.size - 1)
+        }
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(12.dp),
+            .padding(10.dp),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // 1. TOP HEADER (Matching Screenshots)
+        // HEADER
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -150,54 +136,30 @@ fun MainScreen() {
             shape = RoundedCornerShape(10.dp)
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
+                modifier = Modifier.fillMaxWidth().padding(12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text(
-                        text = "PAK-OBB TOOL",
-                        color = NeonCyan,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Text(
-                        text = "VERSION : 4.5\nTOOL : $selectedGameType || ${toolMode.name}",
-                        color = Color(0xFF88A0B8),
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        lineHeight = 15.sp
-                    )
+                    Text("PAK-OBB TOOL", color = NeonCyan, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Text("VERSION : 4.5\nTOOL : $selectedGameType || ${toolMode.name}", color = Color(0xFF88A0B8), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { /* Toggle theme */ }) {
-                        Icon(Icons.Default.Brightness2, contentDescription = "Theme", tint = Color.White)
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF8D6E63))
-                            .border(1.dp, NeonCyan, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("OBB", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                    }
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF8D6E63))
+                        .border(1.dp, NeonCyan, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("OBB", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 9.sp)
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 2. CATEGORY SELECTORS (MINI ZSDIC, MINI OBB, GAMEPATCH, ODPAKS)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            listOf("MINI ZSDIC", "MINI OBB").forEach { type ->
+        // CATEGORY ROW
+        Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("MINI ZSDIC", "MINI OBB", "GAMEPATCH", "ODPAKS").forEach { type ->
                 Button(
                     onClick = { selectedGameType = type },
                     modifier = Modifier.weight(1f),
@@ -206,154 +168,90 @@ fun MainScreen() {
                         containerColor = if (selectedGameType == type) BtnBlue else Color(0xFF092240)
                     ),
                     border = BorderStroke(1.dp, BorderCyan),
-                    contentPadding = PaddingValues(vertical = 8.dp)
+                    contentPadding = PaddingValues(vertical = 4.dp, horizontal = 2.dp)
                 ) {
-                    Text(type, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Color.White)
+                    Text(type, fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = Color.White, maxLines = 1)
                 }
             }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            listOf("GAMEPATCH", "ODPAKS").forEach { type ->
-                Button(
-                    onClick = { selectedGameType = type },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(6.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (selectedGameType == type) BtnBlue else Color(0xFF092240)
-                    ),
-                    border = BorderStroke(1.dp, BorderCyan),
-                    contentPadding = PaddingValues(vertical = 8.dp)
-                ) {
-                    Text(type, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Color.White)
-                }
-            }
-        }
-
-        // 3. UNPACK / REPACK MODE SWITCH (Screenshot 3 & 4)
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+        // UNPACK / REPACK SWITCH
+        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
                 onClick = { toolMode = ToolMode.UNPACK },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).height(40.dp),
                 shape = RoundedCornerShape(6.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (toolMode == ToolMode.UNPACK) BtnBlue else Color(0xFF092240)
-                ),
+                colors = ButtonDefaults.buttonColors(containerColor = if (toolMode == ToolMode.UNPACK) BtnBlue else Color(0xFF092240)),
                 border = BorderStroke(1.dp, if (toolMode == ToolMode.UNPACK) NeonCyan else BorderCyan)
             ) {
-                Text("UNPACK", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                Text("UNPACK", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
 
             Button(
                 onClick = { toolMode = ToolMode.REPACK },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).height(40.dp),
                 shape = RoundedCornerShape(6.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (toolMode == ToolMode.REPACK) BtnBlue else Color(0xFF092240)
-                ),
+                colors = ButtonDefaults.buttonColors(containerColor = if (toolMode == ToolMode.REPACK) BtnBlue else Color(0xFF092240)),
                 border = BorderStroke(1.dp, if (toolMode == ToolMode.REPACK) NeonCyan else BorderCyan)
             ) {
-                Text("REPACK", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                Text("REPACK", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
         }
 
-        // 4. STORAGE INSTRUCTIONS CARD
+        // STORAGE INSTRUCTION CARD
         Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(1.dp, BorderCyan, RoundedCornerShape(8.dp)),
+            modifier = Modifier.fillMaxWidth().border(1.dp, BorderCyan, RoundedCornerShape(6.dp)),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF061426)),
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(6.dp)
         ) {
-            Column(modifier = Modifier.padding(10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(NeonGreen))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        "Place Pak In [ /sdcard/MCob/input/ ]",
-                        color = Color(0xFFA2B4C7),
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                    Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(NeonGreen))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        "Place Edited In [ /sdcard/MCob/editor/ ]",
-                        color = Color(0xFFA2B4C7),
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                    Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(NeonGreen))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        "Output Saved In [ /sdcard/MCob/repack/ ]",
-                        color = Color(0xFFA2B4C7),
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
+            Column(modifier = Modifier.padding(8.dp)) {
+                Text("• Input  : /sdcard/MCob/input/ (Place .pak here)", color = Color(0xFFA2B4C7), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                Text("• Editor : /sdcard/MCob/editor/ (Place modded .uasset/.uexp)", color = Color(0xFFA2B4C7), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                Text("• Output : /sdcard/MCob/repack/ (Exact input name)", color = Color(0xFFA2B4C7), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
             }
         }
 
-        // 5. DETECTED PAK FILES (Radio Selector)
+        // FILE SELECTOR
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(110.dp)
-                .padding(vertical = 4.dp)
-                .border(1.dp, BorderCyan, RoundedCornerShape(8.dp)),
+                .height(95.dp)
+                .padding(vertical = 2.dp)
+                .border(1.dp, BorderCyan, RoundedCornerShape(6.dp)),
             colors = CardDefaults.cardColors(containerColor = CardBg),
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(6.dp)
         ) {
             if (detectedPaks.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize().padding(8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "No .pak files found in /MCob/input/",
-                            color = Color.Gray,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        IconButton(onClick = { scanPaks() }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = NeonCyan)
+                        Text("No .pak in /MCob/input/", color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                        IconButton(onClick = { scanInputPaks() }) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = NeonCyan, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
             } else {
-                LazyColumn(modifier = Modifier.padding(8.dp)) {
+                LazyColumn(modifier = Modifier.padding(6.dp)) {
                     items(detectedPaks) { pak ->
                         val isSelected = selectedPak == pak
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { selectedPak = pak }
-                                .padding(vertical = 4.dp),
+                                .padding(vertical = 3.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                                 contentDescription = null,
                                 tint = if (isSelected) Color(0xFFFFD700) else Color.Gray,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(16.dp)
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = pak,
                                 color = if (isSelected) Color(0xFFFFD700) else Color.White,
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace
                             )
                         }
@@ -362,72 +260,43 @@ fun MainScreen() {
             }
         }
 
-        // 6. TERMINAL LOG BOX & PROGRESS (Screenshots 2 & 3)
+        // TERMINAL LOG BOX
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .border(1.dp, BorderCyan, RoundedCornerShape(8.dp)),
+                .border(1.dp, BorderCyan, RoundedCornerShape(6.dp)),
             colors = CardDefaults.cardColors(containerColor = TerminalDark),
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(6.dp)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Log Header
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF032238))
-                        .padding(vertical = 4.dp),
+                    modifier = Modifier.fillMaxWidth().background(Color(0xFF032238)).padding(vertical = 3.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "LOG BOX : ENGINE READY || METHOD : ${toolMode.name}",
-                        color = NeonCyan,
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
+                    Text("LOG BOX : ENGINE READY || METHOD : ${toolMode.name}", color = NeonCyan, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
                 }
-
-                // Logs Text
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(8.dp)
-                ) {
+                LazyColumn(state = listState, modifier = Modifier.weight(1f).padding(6.dp)) {
                     items(logMessages) { msg ->
                         Text(
                             text = msg,
-                            color = if (msg.contains("Error")) Color.Red else NeonGreen,
-                            fontSize = 11.sp,
+                            color = if (msg.contains("Error") || msg.contains("Exception")) Color.Red else NeonGreen,
+                            fontSize = 10.sp,
                             fontFamily = FontFamily.Monospace,
-                            lineHeight = 15.sp
+                            lineHeight = 14.sp
                         )
                     }
                 }
-
-                // Progress Bar
-                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
-                    Text(
-                        text = "DONE : ${(progress * 100).toInt()}%",
-                        color = NeonCyan,
-                        fontSize = 9.sp,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                    )
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
-                        color = NeonCyan,
-                        trackColor = Color(0xFF05324D),
-                    )
+                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 2.dp)) {
+                    Text("DONE : ${(progress * 100).toInt()}%", color = NeonCyan, fontSize = 8.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.align(Alignment.CenterHorizontally))
+                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)), color = NeonCyan, trackColor = Color(0xFF05324D))
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
-        // 7. ACTION BUTTON (START UNPACK / START REPACK)
+        // ACTION BUTTON
         Button(
             onClick = {
                 if (selectedPak.isEmpty()) {
@@ -435,7 +304,7 @@ fun MainScreen() {
                     return@Button
                 }
                 isProcessing = true
-                progress = 0.2f
+                progress = 0.3f
                 coroutineScope.launch(Dispatchers.IO) {
                     try {
                         val py = Python.getInstance()
@@ -443,7 +312,7 @@ fun MainScreen() {
                         val resJson = if (toolMode == ToolMode.UNPACK) {
                             module.callAttr("unpack_pak_file", selectedPak).toString()
                         } else {
-                            module.callAttr("repack_pak_file", selectedPak, "GamePatch_Mod.pak").toString()
+                            module.callAttr("repack_pak_file", selectedPak).toString()
                         }
                         val obj = JSONObject(resJson)
                         val logsArr = obj.getJSONArray("logs")
@@ -464,58 +333,41 @@ fun MainScreen() {
                     }
                 }
             },
-            modifier = Modifier.fillMaxWidth().height(48.dp),
+            modifier = Modifier.fillMaxWidth().height(44.dp),
             shape = RoundedCornerShape(6.dp),
             colors = ButtonDefaults.buttonColors(containerColor = BtnBlue),
             border = BorderStroke(1.dp, NeonCyan),
             enabled = !isProcessing
         ) {
             if (isProcessing) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White)
             } else {
-                Text(
-                    text = if (toolMode == ToolMode.UNPACK) "START UNPACKING" else "START REPACKING",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                    color = Color.White
-                )
+                Text(if (toolMode == ToolMode.UNPACK) "START UNPACKING" else "START REPACKING", fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
             }
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
-        // 8. SOCIAL FOOTER (Telegram / Youtube from Screenshot 1)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+        // SOCIAL FOOTER
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Button(
-                onClick = { /* Open Telegram */ },
-                modifier = Modifier.weight(1f).height(40.dp),
+                onClick = { /* Telegram */ },
+                modifier = Modifier.weight(1f).height(36.dp),
                 shape = RoundedCornerShape(6.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0088CC))
             ) {
-                Text("TELEGRAM", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                Text("TELEGRAM", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
             }
-
             Button(
-                onClick = { /* Open YouTube */ },
-                modifier = Modifier.weight(1f).height(40.dp),
+                onClick = { /* YouTube */ },
+                modifier = Modifier.weight(1f).height(36.dp),
                 shape = RoundedCornerShape(6.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = BtnRed)
             ) {
-                Text("YOUTUBE", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                Text("YOUTUBE", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
             }
         }
 
-        // Dev tag
-        Text(
-            text = "DEV BY : @Owner_BlackMagicYT || TG : @Black_MagicYT",
-            color = Color(0xFFFFD700),
-            fontSize = 9.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp)
-        )
+        Text("DEV BY : @Owner_BlackMagicYT || TG : @Black_MagicYT", color = Color(0xFFFFD700), fontSize = 8.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 2.dp))
     }
 }
