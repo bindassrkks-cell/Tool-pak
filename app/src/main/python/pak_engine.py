@@ -49,7 +49,6 @@ def unpack_ue_pak_binary(pak_path, target_dir, logs):
     extracted_count = 0
     
     with open(pak_path, 'rb') as f:
-        # 1. Search for FPakInfo (Footer) from end of file
         seek_window = min(file_size, 4096)
         f.seek(file_size - seek_window)
         footer_bytes = f.read(seek_window)
@@ -63,7 +62,6 @@ def unpack_ue_pak_binary(pak_path, target_dir, logs):
         footer_offset = (file_size - seek_window) + magic_idx
         f.seek(footer_offset)
 
-        # Read FPakInfo
         magic = struct.unpack('<I', f.read(4))[0]
         version = struct.unpack('<i', f.read(4))[0]
         index_offset = struct.unpack('<q', f.read(8))[0]
@@ -76,11 +74,9 @@ def unpack_ue_pak_binary(pak_path, target_dir, logs):
             logs.append("> Error: Invalid index offset in PAK footer.")
             return 0
 
-        # 2. Seek to Index Table
         f.seek(index_offset)
         mount_point = read_fstring(f)
         
-        # Clean mount point path
         clean_mount = mount_point.replace("../", "").lstrip("/")
         if clean_mount and not clean_mount.endswith("/"):
             clean_mount += "/"
@@ -93,21 +89,18 @@ def unpack_ue_pak_binary(pak_path, target_dir, logs):
         num_entries = struct.unpack('<I', num_entries_bytes)[0]
         logs.append(f"> Parsing {num_entries} dynamic file entries from index...")
 
-        # 3. Dynamic Index Traversal
         for _ in range(num_entries):
             try:
                 rel_filename = read_fstring(f)
                 if not rel_filename:
                     continue
 
-                # Parse FPakEntry (Standard UE4 layout)
                 entry_data = f.read(48)
                 if len(entry_data) < 48:
                     break
 
                 offset, size, uncompressed_size, comp_method = struct.unpack('<QQQI', entry_data[:28])
 
-                # Read Compression Blocks if compressed
                 comp_blocks = []
                 if comp_method != 0:
                     block_count_bytes = f.read(4)
@@ -119,14 +112,10 @@ def unpack_ue_pak_binary(pak_path, target_dir, logs):
                                 b_start, b_end = struct.unpack('<QQ', block_data)
                                 comp_blocks.append((b_start, b_end))
 
-                # Read encryption flag & compression block size
-                f.read(5)  # bEncrypted (1 byte) + BlockSize (4 bytes)
+                f.read(5)
 
-                # 4. Extract Real Binary Data from File Offset
                 saved_index_pos = f.tell()
                 f.seek(offset)
-
-                # Skip header stored at payload offset
                 f.seek(offset + 8 + 8 + 8 + 4 + 20)
                 if comp_method != 0 and comp_blocks:
                     f.seek(offset + 8 + 8 + 8 + 4 + 20 + 4 + (len(comp_blocks) * 16) + 1 + 4)
@@ -134,19 +123,17 @@ def unpack_ue_pak_binary(pak_path, target_dir, logs):
                 raw_payload = f.read(size)
                 extracted_data = raw_payload
 
-                # Decompress binary stream
-                if comp_method == 1:  # Zlib
+                if comp_method == 1:
                     try:
                         extracted_data = zlib.decompress(raw_payload)
                     except Exception:
                         pass
-                elif comp_method == 3 and zstd:  # Zstandard
+                elif comp_method == 3 and zstd:
                     try:
                         extracted_data = zstd.ZstdDecompressor().decompress(raw_payload, max_output_size=uncompressed_size)
                     except Exception:
                         pass
 
-                # Build dynamic file directory structure
                 clean_file_path = rel_filename.lstrip("/")
                 if clean_mount:
                     full_rel_path = os.path.join(clean_mount, clean_file_path)
@@ -165,7 +152,7 @@ def unpack_ue_pak_binary(pak_path, target_dir, logs):
                 extracted_count += 1
 
                 f.seek(saved_index_pos)
-            except Exception as e:
+            except Exception:
                 continue
 
     return extracted_count
@@ -191,7 +178,6 @@ def unpack_pak_file(pak_filename, unpack_type="ALL"):
 
     extracted_count = 0
 
-    # 1. Check if Container is Standard Zip / OBB
     if zipfile.is_zipfile(pak_path):
         logs.append("> Container: Zip / OBB Archive")
         with zipfile.ZipFile(pak_path, 'r') as zip_ref:
@@ -204,7 +190,6 @@ def unpack_pak_file(pak_filename, unpack_type="ALL"):
                 logs.append(f"✅ {file_name} || {size_kb} KB")
                 extracted_count += 1
     else:
-        # 2. Dynamic Unreal Engine Binary Extraction
         extracted_count = unpack_ue_pak_binary(pak_path, target_unpack_dir, logs)
 
     if extracted_count == 0:
@@ -230,7 +215,6 @@ def repack_pak_file(source_pak_name):
         "> Scanning /sdcard/MCob/editor/ for modified assets..."
     ]
 
-    # 1. Dynamic Asset Injection from /editor
     injected_count = 0
     if os.path.exists(EDITOR_DIR):
         for root, _, files in os.walk(EDITOR_DIR):
@@ -250,7 +234,6 @@ def repack_pak_file(source_pak_name):
     else:
         logs.append("  (No modified files found in /editor; packing direct unpacked tree)")
 
-    # 2. Repack into Original Input PAK Name
     output_path = os.path.join(REPACK_DIR, source_pak_name)
     logs.append(f"> Compressing & packing into: {source_pak_name}")
 

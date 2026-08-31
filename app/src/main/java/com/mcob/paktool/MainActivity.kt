@@ -94,9 +94,6 @@ fun AppNavigation() {
     }
 }
 
-// -------------------------------------------------------------
-// SCREEN 1: HOME MENU SCREEN (Matching Screenshot 1)
-// -------------------------------------------------------------
 @Composable
 fun HomeMenuScreen(onNavigateToPakTool: () -> Unit) {
     val context = LocalContext.current
@@ -107,7 +104,6 @@ fun HomeMenuScreen(onNavigateToPakTool: () -> Unit) {
             .padding(14.dp),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // Top Header Box
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -143,7 +139,6 @@ fun HomeMenuScreen(onNavigateToPakTool: () -> Unit) {
             }
         }
 
-        // 4 Main Action Buttons (Screenshot 1)
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -189,7 +184,6 @@ fun HomeMenuScreen(onNavigateToPakTool: () -> Unit) {
             }
         }
 
-        // Footer Section
         Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
                 onClick = { },
@@ -233,9 +227,6 @@ fun HomeMenuScreen(onNavigateToPakTool: () -> Unit) {
     }
 }
 
-// -------------------------------------------------------------
-// SCREEN 2: PAK TOOL DETAILED SCREEN (Screenshot 2, 3, 4)
-// -------------------------------------------------------------
 @Composable
 fun PakToolDetailScreen(onNavigateBack: () -> Unit) {
     var toolMode by remember { mutableStateOf(ToolMode.UNPACK) }
@@ -293,7 +284,6 @@ fun PakToolDetailScreen(onNavigateBack: () -> Unit) {
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // Top Header
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -323,7 +313,6 @@ fun PakToolDetailScreen(onNavigateBack: () -> Unit) {
             }
         }
 
-        // 4 Category Mode Buttons
         Row(modifier = Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             listOf("MINI ZSDIC", "MINI OBB", "GAMEPATCH", "ODPAKS").forEach { type ->
                 Button(
@@ -339,7 +328,6 @@ fun PakToolDetailScreen(onNavigateBack: () -> Unit) {
             }
         }
 
-        // UNPACK / REPACK TAB SWITCH
         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Button(
                 onClick = { toolMode = ToolMode.UNPACK },
@@ -362,7 +350,6 @@ fun PakToolDetailScreen(onNavigateBack: () -> Unit) {
             }
         }
 
-        // Path Info Box
         Card(
             modifier = Modifier.fillMaxWidth().border(1.dp, BorderCyan, RoundedCornerShape(6.dp)),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF051324)),
@@ -375,7 +362,6 @@ fun PakToolDetailScreen(onNavigateBack: () -> Unit) {
             }
         }
 
-        // File List Selector
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -441,7 +427,6 @@ fun PakToolDetailScreen(onNavigateBack: () -> Unit) {
             }
         }
 
-        // Terminal Log Box
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -475,7 +460,6 @@ fun PakToolDetailScreen(onNavigateBack: () -> Unit) {
             }
         }
 
-        // Method Switchers (ALL, SINGLE, MULTI)
         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             listOf("ALL", "SINGLE", "MULTI").forEach { method ->
                 Button(
@@ -490,7 +474,6 @@ fun PakToolDetailScreen(onNavigateBack: () -> Unit) {
             }
         }
 
-        // Start Action Button
         Button(
             onClick = {
                 if (selectedPaks.isEmpty()) {
@@ -544,7 +527,6 @@ fun PakToolDetailScreen(onNavigateBack: () -> Unit) {
             }
         }
 
-        // Back to Menu Button
         Button(
             onClick = { onNavigateBack() },
             modifier = Modifier.fillMaxWidth().height(36.dp).padding(top = 2.dp),
