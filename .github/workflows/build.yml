@@ -30,15 +30,6 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Generate Gradle 8.4 Wrapper (Isolated)
-        run: |
-          mkdir -p /tmp/wrap-gen
-          cd /tmp/wrap-gen
-          gradle wrapper --gradle-version 8.4 --distribution-type bin
-          cp -r gradlew gradlew.bat gradle "$GITHUB_WORKSPACE/"
-          cd "$GITHUB_WORKSPACE"
-          chmod +x gradlew
-
       - name: Scaffold Complete Project Code
         run: |
           mkdir -p .github/workflows
@@ -418,6 +409,14 @@ jobs:
           local.properties
           app/build/
           EOF
+
+      - name: Setup Native Gradle 8.4 Wrapper
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.4-bin.zip -O /tmp/gradle-8.4-bin.zip
+          unzip -q -o /tmp/gradle-8.4-bin.zip -d /tmp/
+          /tmp/gradle-8.4/bin/gradle wrapper --gradle-version 8.4 --distribution-type bin
+          chmod +x gradlew
+          rm -rf /tmp/gradle-8.4 /tmp/gradle-8.4-bin.zip
 
       - name: Commit and Push Project Code
         run: |
