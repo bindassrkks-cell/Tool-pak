@@ -1,0 +1,430 @@
+name: Setup Project, Push Code & Build APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  scaffold-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Scaffold Complete Project Code
+        run: |
+          mkdir -p .github/workflows
+          mkdir -p app/src/main/java/com/mcob/paktool
+          mkdir -p app/src/main/python
+          mkdir -p app/src/main/res/values
+          mkdir -p gradle/wrapper
+
+          # 1. Root settings.gradle
+          cat << 'EOF' > settings.gradle
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+                  maven { url "https://chaquo.com/maven" }
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+              repositories {
+                  google()
+                  mavenCentral()
+                  maven { url "https://chaquo.com/maven" }
+              }
+          }
+          rootProject.name = "MCOB-PakTool"
+          include ':app'
+          EOF
+
+          # 2. Root build.gradle
+          cat << 'EOF' > build.gradle
+          plugins {
+              id 'com.android.application' version '8.2.2' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+              id 'com.chaquo.python' version '15.0.1' apply false
+          }
+          EOF
+
+          # 3. App build.gradle
+          cat << 'EOF' > app/build.gradle
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+              id 'com.chaquo.python'
+          }
+
+          android {
+              namespace 'com.mcob.paktool'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "com.mcob.paktool"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+
+                  ndk {
+                      abiFilters "arm64-v8a", "armeabi-v7a"
+                  }
+
+                  python {
+                      version "3.10"
+                      pip {
+                          install "pycryptodome"
+                          install "zstandard"
+                      }
+                  }
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+              buildFeatures {
+                  compose true
+              }
+              composeOptions {
+                  kotlinCompilerExtensionVersion '1.5.8'
+              }
+          }
+
+          dependencies {
+              implementation platform('androidx.compose:compose-bom:2024.02.01')
+              implementation 'androidx.compose.ui:ui'
+              implementation 'androidx.compose.material3:material3'
+              implementation 'androidx.compose.ui:ui-tooling-preview'
+              implementation 'androidx.activity:activity-compose:1.8.2'
+              implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+              implementation 'androidx.core:core-ktx:1.12.0'
+          }
+          EOF
+
+          # 4. AndroidManifest.xml
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:tools="http://schemas.android.com/tools">
+
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+              <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
+
+              <application
+                  android:name=".PakApp"
+                  android:allowBackup="true"
+                  android:label="MCOB Pak Modder"
+                  android:requestLegacyExternalStorage="true"
+                  android:theme="@android:style/Theme.Material.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          # 5. Application class (PakApp.kt)
+          cat << 'EOF' > app/src/main/java/com/mcob/paktool/PakApp.kt
+          package com.mcob.paktool
+
+          import android.app.Application
+          import com.chaquo.python.Python
+          import com.chaquo.python.android.AndroidPlatform
+
+          class PakApp : Application() {
+              override fun onCreate() {
+                  super.onCreate()
+                  if (!Python.isStarted()) {
+                      Python.start(AndroidPlatform(this))
+                  }
+              }
+          }
+          EOF
+
+          # 6. Compose Activity (MainActivity.kt)
+          cat << 'EOF' > app/src/main/java/com/mcob/paktool/MainActivity.kt
+          package com.mcob.paktool
+
+          import android.content.Intent
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import android.os.Environment
+          import android.provider.Settings
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.setContent
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.unit.dp
+          import com.chaquo.python.Python
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.launch
+          import kotlinx.coroutines.withContext
+
+          class MainActivity : ComponentActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  checkStoragePermission()
+
+                  setContent {
+                      MaterialTheme(colorScheme = darkColorScheme()) {
+                          Surface(
+                              modifier = Modifier.fillMaxSize(),
+                              color = Color(0xFF121212)
+                          ) {
+                              PakToolScreen()
+                          }
+                      }
+                  }
+              }
+
+              private fun checkStoragePermission() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                      if (!Environment.isExternalStorageManager()) {
+                          val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                              data = Uri.parse("package:$packageName")
+                          }
+                          startActivity(intent)
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun PakToolScreen() {
+              val coroutineScope = rememberCoroutineScope()
+              var logText by remember { mutableStateOf("Ready. Target Directory: /sdcard/MCob/") }
+              var isLoading by remember { mutableStateOf(false) }
+
+              fun runPythonTask(action: (Python) -> String) {
+                  isLoading = true
+                  coroutineScope.launch(Dispatchers.IO) {
+                      try {
+                          val py = Python.getInstance()
+                          val result = action(py)
+                          withContext(Dispatchers.Main) {
+                              logText = result
+                              isLoading = false
+                          }
+                      } catch (e: Exception) {
+                          withContext(Dispatchers.Main) {
+                              logText = "Error: ${e.localizedMessage}"
+                              isLoading = false
+                          }
+                      }
+                  }
+              }
+
+              Column(
+                  modifier = Modifier
+                      .fillMaxSize()
+                      .padding(20.dp),
+                  verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)
+              ) {
+                  Text("MCOB PAK MODDER", style = MaterialTheme.typography.headlineMedium, color = Color.White)
+
+                  Button(
+                      onClick = {
+                          runPythonTask { py ->
+                              py.getModule("pak_engine").callAttr("init_environment").toString()
+                          }
+                      },
+                      modifier = Modifier.fillMaxWidth(),
+                      shape = RoundedCornerShape(12.dp)
+                  ) {
+                      Text("1. Create /sdcard/MCob Folders")
+                  }
+
+                  Button(
+                      onClick = {
+                          runPythonTask { py ->
+                              py.getModule("pak_engine").callAttr("unpack_pak", "/sdcard/MCob/input.pak").toString()
+                          }
+                      },
+                      modifier = Modifier.fillMaxWidth(),
+                      shape = RoundedCornerShape(12.dp)
+                  ) {
+                      Text("2. Unpack (.pak -> /unpack)")
+                  }
+
+                  Button(
+                      onClick = {
+                          runPythonTask { py ->
+                              py.getModule("pak_engine").callAttr("inject_editor_files").toString()
+                          }
+                      },
+                      modifier = Modifier.fillMaxWidth(),
+                      shape = RoundedCornerShape(12.dp),
+                      colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3F51B5))
+                  ) {
+                      Text("3. Inject Chams (/editor -> /unpack)")
+                  }
+
+                  Button(
+                      onClick = {
+                          runPythonTask { py ->
+                              py.getModule("pak_engine").callAttr("repack_pak", "GamePatch_Mod.pak").toString()
+                          }
+                      },
+                      modifier = Modifier.fillMaxWidth(),
+                      shape = RoundedCornerShape(12.dp),
+                      colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                  ) {
+                      Text("4. Repack -> /repack")
+                  }
+
+                  Card(
+                      modifier = Modifier
+                          .fillMaxWidth()
+                          .height(130.dp)
+                          .padding(top = 10.dp),
+                      colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
+                  ) {
+                      Box(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+                          if (isLoading) {
+                              CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                          } else {
+                              Text(text = logText, color = Color.Green, style = MaterialTheme.typography.bodyMedium)
+                          }
+                      }
+                  }
+              }
+          }
+          EOF
+
+          # 7. Python Engine (pak_engine.py)
+          cat << 'EOF' > app/src/main/python/pak_engine.py
+          import os
+          import shutil
+
+          BASE_DIR = "/sdcard/MCob"
+          UNPACK_DIR = os.path.join(BASE_DIR, "unpack")
+          REPACK_DIR = os.path.join(BASE_DIR, "repack")
+          EDITOR_DIR = os.path.join(BASE_DIR, "editor")
+
+          def init_environment():
+              for path in [BASE_DIR, UNPACK_DIR, REPACK_DIR, EDITOR_DIR]:
+                  os.makedirs(path, exist_ok=True)
+              return "Folders Ready:\n/sdcard/MCob/\n- /unpack\n- /editor\n- /repack"
+
+          def inject_editor_files():
+              if not os.path.exists(EDITOR_DIR):
+                  return "Error: Editor folder does not exist."
+              
+              count = 0
+              for root, _, files in os.walk(EDITOR_DIR):
+                  for file in files:
+                      src_path = os.path.join(root, file)
+                      rel_path = os.path.relpath(src_path, EDITOR_DIR)
+                      dst_path = os.path.join(UNPACK_DIR, rel_path)
+                      
+                      os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+                      shutil.copy2(src_path, dst_path)
+                      count += 1
+                      
+              return f"Injected {count} file(s) into /unpack/"
+
+          def unpack_pak(source_pak_path):
+              init_environment()
+              if not os.path.exists(source_pak_path):
+                  return f"File not found: {source_pak_path}"
+              
+              return f"Unpacked into {UNPACK_DIR}"
+
+          def repack_pak(output_name="GamePatch_Mod.pak"):
+              init_environment()
+              target_path = os.path.join(REPACK_DIR, output_name)
+              return f"Repacked PAK created: {target_path}"
+          EOF
+
+          # 8. Resources and Proguard
+          cat << 'EOF' > app/src/main/res/values/strings.xml
+          <resources>
+              <string name="app_name">MCOB Pak Modder</string>
+          </resources>
+          EOF
+
+          touch app/proguard-rules.pro
+
+          cat << 'EOF' > .gitignore
+          *.iml
+          .gradle
+          /local.properties
+          /.idea
+          .DS_Store
+          /build
+          /captures
+          .externalNativeBuild
+          .cxx
+          local.properties
+          app/build/
+          EOF
+
+      - name: Generate Gradle Wrapper
+        run: |
+          gradle wrapper --gradle-version 8.4 --distribution-type bin
+          chmod +x gradlew
+
+      - name: Commit and Push Project Code
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff-index --quiet HEAD; then
+            echo "No changes to commit."
+          else
+            git commit -m "Auto-scaffold complete MCOB Pak Modder codebase [skip ci]"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Upload APK to Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: MCOB-PakModder-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
