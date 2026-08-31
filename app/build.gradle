@@ -24,6 +24,13 @@ android {
             pip {
                 install "pycryptodome"
                 install "zstandard"
+                install "gmalg"
+                install "requests"
+                install "colorama"
+                install "rich"
+                install "termcolor"
+                install "pyfiglet"
+                install "cryptography"
             }
         }
     }
