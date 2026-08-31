@@ -30,15 +30,30 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Generate Gradle 8.4 Wrapper (Isolated)
+        run: |
+          mkdir -p /tmp/wrap-gen
+          cd /tmp/wrap-gen
+          gradle wrapper --gradle-version 8.4 --distribution-type bin
+          cp -r gradlew gradlew.bat gradle "$GITHUB_WORKSPACE/"
+          cd "$GITHUB_WORKSPACE"
+          chmod +x gradlew
+
       - name: Scaffold Complete Project Code
         run: |
           mkdir -p .github/workflows
           mkdir -p app/src/main/java/com/mcob/paktool
           mkdir -p app/src/main/python
           mkdir -p app/src/main/res/values
-          mkdir -p gradle/wrapper
 
-          # 1. Root settings.gradle
+          # 1. gradle.properties
+          cat << 'EOF' > gradle.properties
+          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          EOF
+
+          # 2. settings.gradle
           cat << 'EOF' > settings.gradle
           pluginManagement {
               repositories {
@@ -60,7 +75,7 @@ jobs:
           include ':app'
           EOF
 
-          # 2. Root build.gradle
+          # 3. Root build.gradle
           cat << 'EOF' > build.gradle
           plugins {
               id 'com.android.application' version '8.2.2' apply false
@@ -69,7 +84,7 @@ jobs:
           }
           EOF
 
-          # 3. App build.gradle
+          # 4. app/build.gradle
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
@@ -133,7 +148,7 @@ jobs:
           }
           EOF
 
-          # 4. AndroidManifest.xml
+          # 5. AndroidManifest.xml
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -148,6 +163,7 @@ jobs:
                   android:allowBackup="true"
                   android:label="MCOB Pak Modder"
                   android:requestLegacyExternalStorage="true"
+                  android:supportsRtl="true"
                   android:theme="@android:style/Theme.Material.NoActionBar">
                   <activity
                       android:name=".MainActivity"
@@ -161,7 +177,7 @@ jobs:
           </manifest>
           EOF
 
-          # 5. Application class (PakApp.kt)
+          # 6. Application class (PakApp.kt)
           cat << 'EOF' > app/src/main/java/com/mcob/paktool/PakApp.kt
           package com.mcob.paktool
 
@@ -179,7 +195,7 @@ jobs:
           }
           EOF
 
-          # 6. Compose Activity (MainActivity.kt)
+          # 7. Jetpack Compose UI (MainActivity.kt)
           cat << 'EOF' > app/src/main/java/com/mcob/paktool/MainActivity.kt
           package com.mcob.paktool
 
@@ -236,7 +252,7 @@ jobs:
           @Composable
           fun PakToolScreen() {
               val coroutineScope = rememberCoroutineScope()
-              var logText by remember { mutableStateOf("Ready. Target Directory: /sdcard/MCob/") }
+              var logText by remember { mutableStateOf("Ready. Storage Base: /sdcard/MCob/") }
               var isLoading by remember { mutableStateOf(false) }
 
               fun runPythonTask(action: (Python) -> String) {
@@ -335,7 +351,7 @@ jobs:
           }
           EOF
 
-          # 7. Python Engine (pak_engine.py)
+          # 8. Python Engine (pak_engine.py)
           cat << 'EOF' > app/src/main/python/pak_engine.py
           import os
           import shutil
@@ -380,7 +396,7 @@ jobs:
               return f"Repacked PAK created: {target_path}"
           EOF
 
-          # 8. Resources and Proguard
+          # 9. Resources, Proguard & Gitignore
           cat << 'EOF' > app/src/main/res/values/strings.xml
           <resources>
               <string name="app_name">MCOB Pak Modder</string>
@@ -403,11 +419,6 @@ jobs:
           app/build/
           EOF
 
-      - name: Generate Gradle Wrapper
-        run: |
-          gradle wrapper --gradle-version 8.4 --distribution-type bin
-          chmod +x gradlew
-
       - name: Commit and Push Project Code
         run: |
           git config user.name "github-actions[bot]"
@@ -421,7 +432,7 @@ jobs:
           fi
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK to Artifacts
         uses: actions/upload-artifact@v4
