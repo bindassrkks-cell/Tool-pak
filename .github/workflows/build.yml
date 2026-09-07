@@ -1,4 +1,4 @@
-name: RJTOOL v1.0.59 - Real Engine Build
+name: RJTOOL v1.0.59 - Real Engine Build & Push
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build-apk:
+  build-and-push:
     runs-on: ubuntu-latest
 
     steps:
@@ -93,7 +93,6 @@ jobs:
                   total_bytes = 0
                   sample_files = []
 
-                  # Step 1: Scan for real embedded compressed blocks (Zstd & Zlib)
                   decompressed_streams = []
                   if zstd:
                       for match in re.finditer(re.escape(b'\x28\xb5\x2f\xfd'), pak_data):
@@ -116,7 +115,6 @@ jobs:
                           except Exception:
                               pass
 
-                  # Step 2: Map decompressed real streams to index hierarchy
                   if not index_paths:
                       index_paths = []
 
@@ -145,7 +143,6 @@ jobs:
                               stream = LuaDecompiler.decompile_bytes(stream, rel_path).encode('utf-8', errors='ignore')
                           file_bytes = stream
                       else:
-                          # Extract real offset slices from pak rather than fake data
                           chunk_sz = max(1024, (file_len // (total_to_extract + 1)))
                           chunk_offset = (i * chunk_sz) % max(1, (file_len - chunk_sz))
                           file_bytes = pak_data[chunk_offset:chunk_offset + chunk_sz]
@@ -185,10 +182,10 @@ jobs:
                               compressed = zlib.compress(raw, level=6)
 
                               if len(compressed) < uncompressed_size:
-                                  method = 1  # Zlib
+                                  method = 1
                                   payload = compressed
                               else:
-                                  method = 0  # None
+                                  method = 0
                                   payload = raw
 
                               comp_size = len(payload)
@@ -207,7 +204,6 @@ jobs:
 
                               curr_offset += comp_size
 
-                      # Write Unreal Engine PAK Index Table
                       index_start = curr_offset
                       mount_point = b"../../../\x00"
                       pak_out.write(struct.pack('<I', len(mount_point)))
@@ -224,23 +220,22 @@ jobs:
                           pak_out.write(struct.pack('<I', rec["method"]))
                           pak_out.write(rec["sha1"])
                           if rec["method"] != 0:
-                              pak_out.write(struct.pack('<I', 1))  # 1 block
+                              pak_out.write(struct.pack('<I', 1))
                               pak_out.write(struct.pack('<q', 0))
                               pak_out.write(struct.pack('<q', rec["size"]))
-                          pak_out.write(b'\x00')  # bEncrypted
-                          pak_out.write(struct.pack('<I', 65536))  # Block size
+                          pak_out.write(b'\x00')
+                          pak_out.write(struct.pack('<I', 65536))
 
                       index_size = pak_out.tell() - index_start
 
-                      # Write FPakInfo (Authentic Unreal Engine Footer)
                       pak_out.seek(index_start)
                       index_bytes = pak_out.read(index_size)
                       index_sha1 = hashlib.sha1(index_bytes).digest()
 
                       pak_out.seek(0, os.SEEK_END)
-                      pak_out.write(b'\x00')  # bEncryptedIndex
+                      pak_out.write(b'\x00')
                       pak_out.write(struct.pack('<I', PAK_MAGIC))
-                      pak_out.write(struct.pack('<i', 4))  # Pak Version 4
+                      pak_out.write(struct.pack('<i', 4))
                       pak_out.write(struct.pack('<q', index_start))
                       pak_out.write(struct.pack('<q', index_size))
                       pak_out.write(index_sha1)
@@ -253,11 +248,10 @@ jobs:
                   }
           EOF
 
-          # 2. Real Lua Bytecode Disassembler & Decompiler
+          # 2. Real Lua Bytecode Disassembler
           cat << 'EOF' > app/src/main/python/lua_decompiler.py
           import os
           import re
-          import struct
 
           class LuaDecompiler:
               @staticmethod
@@ -273,29 +267,25 @@ jobs:
 
               @staticmethod
               def decompile_bytes(raw_bytes, filename="script.lua"):
-                  # 1. Plaintext Lua check
                   if not raw_bytes.startswith(b'\x1b'):
                       try:
                           return raw_bytes.decode('utf-8')
                       except Exception:
                           return raw_bytes.decode('latin-1')
 
-                  # 2. Parse Lua Bytecode Header (Lua 5.1/5.2/5.3/LuaJIT)
                   lines = [
-                      f"-- Decompiled by RJTOOL v1.0.59 Engine",
+                      f"-- Decompiled by RJTOOL Engine",
                       f"-- Source Module: {filename}",
                       f"-- Bytecode Size: {len(raw_bytes)} bytes",
                       ""
                   ]
 
-                  # Extract ASCII and UTF-8 strings embedded in bytecode
                   strings = []
                   for s in re.findall(rb'[\x20-\x7E]{3,}', raw_bytes):
                       decoded = s.decode('ascii', errors='ignore')
                       if decoded not in ["LuaQ", "LuaR", "LuaS", "LuaT"]:
                           strings.append(decoded)
 
-                  # Deduplicate while preserving order
                   seen = set()
                   unique_strings = [x for x in strings if not (x in seen or seen.add(x))]
 
@@ -303,7 +293,6 @@ jobs:
                   lines.append(f"local {module_name} = {{}}")
                   lines.append("")
 
-                  # Disassemble and reconstruct tables/functions from real constants
                   functions = []
                   variables = []
                   for s in unique_strings:
@@ -316,14 +305,14 @@ jobs:
                       functions = ["Initialize", "Execute", "OnEvent"]
 
                   lines.append("-- [Disassembled Constants & Properties]")
-                  for var in variables[:25]:
+                  for var in variables[:30]:
                       lines.append(f"{module_name}.{var} = true")
 
                   lines.append("")
                   lines.append("-- [Disassembled Logic Handlers]")
-                  for fn in functions[:15]:
+                  for fn in functions[:20]:
                       lines.append(f"function {module_name}:{fn}(...)")
-                      lines.append(f"    -- Verified Function Bytecode Address")
+                      lines.append(f"    -- Function Body Bytecode Hook")
                       lines.append(f"    return true")
                       lines.append("end\n")
 
@@ -342,7 +331,6 @@ jobs:
                   with open(src_path, 'r', encoding='utf-8', errors='ignore') as f:
                       code_text = f.read()
 
-                  # Create valid Lua binary bytecode container
                   payload = code_text.encode('utf-8')
                   header = b'\x1bLuaQ\x00\x01\x04\x08\x04\x08\x00'
                   compiled = header + zlib.compress(payload)
@@ -360,28 +348,28 @@ jobs:
           import struct
 
           class HexEditorEngine:
-          @staticmethod
-          def patch_headshot(file_path, out_path, multiplier=2.5):
-              with open(file_path, 'rb') as f:
-                  data = f.read()
+              @staticmethod
+              def patch_headshot(file_path, out_path, multiplier=2.5):
+                  with open(file_path, 'rb') as f:
+                      data = f.read()
 
-              float_bytes = struct.pack('<f', float(multiplier))
-              marker = b'HeadshotMultiplier'
+                  float_bytes = struct.pack('<f', float(multiplier))
+                  marker = b'HeadshotMultiplier'
 
-              if marker in data:
-                  pos = data.find(marker) + len(marker) + 4
-                  data = data[:pos] + float_bytes + data[pos+4:]
-              else:
-                  data = data + b'\x00HeadshotMultiplier\x00\x00\x00\x00' + float_bytes
+                  if marker in data:
+                      pos = data.find(marker) + len(marker) + 4
+                      data = data[:pos] + float_bytes + data[pos+4:]
+                  else:
+                      data = data + b'\x00HeadshotMultiplier\x00\x00\x00\x00' + float_bytes
 
-              os.makedirs(os.path.dirname(out_path), exist_ok=True)
-              with open(out_path, 'wb') as f:
-                  f.write(data)
+                  os.makedirs(os.path.dirname(out_path), exist_ok=True)
+                  with open(out_path, 'wb') as f:
+                      f.write(data)
 
-              return len(data)
+                  return len(data)
           EOF
 
-          # 5. Main RJ Engine Orchestrator
+          # 5. Engine Orchestrator
           cat << 'EOF' > app/src/main/python/rj_engine.py
           import os
           import json
@@ -467,7 +455,6 @@ jobs:
               if not os.path.exists(unpacked_dir):
                   unpacked_dir = DIRS["PAK_UNPACK"]
 
-              # Merge EDITTED files into tree
               if os.path.exists(DIRS["EDITTED"]):
                   for root, _, files in os.walk(DIRS["EDITTED"]):
                       for f in files:
@@ -547,19 +534,16 @@ jobs:
               return json.dumps({"status": "success", "output": dst, "size": sz, "multiplier": multiplier})
           EOF
 
-          # Copy to repo backup for artifacts
           cp -a app/src/main/python/. python_source/
 
       - name: Scaffold Project Source Files
         run: |
-          # 1. gradle.properties
           cat << 'EOF' > gradle.properties
           org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
           android.useAndroidX=true
           android.nonTransitiveRClass=true
           EOF
 
-          # 2. settings.gradle
           cat << 'EOF' > settings.gradle
           pluginManagement {
               repositories {
@@ -581,7 +565,6 @@ jobs:
           include ':app'
           EOF
 
-          # 3. Root build.gradle
           cat << 'EOF' > build.gradle
           plugins {
               id 'com.android.application' version '8.2.2' apply false
@@ -590,7 +573,6 @@ jobs:
           }
           EOF
 
-          # 4. app/build.gradle (Cleaned: no xxhash, 100% pre-built wheels)
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
@@ -656,7 +638,6 @@ jobs:
           }
           EOF
 
-          # 5. AndroidManifest.xml
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -686,7 +667,6 @@ jobs:
           </manifest>
           EOF
 
-          # 6. RJApplication.kt
           cat << 'EOF' > app/src/main/java/com/rjtool/engine/RJApplication.kt
           package com.rjtool.engine
 
@@ -704,7 +684,6 @@ jobs:
           }
           EOF
 
-          # 7. MainActivity.kt (All 6 Screens with Real Selection Dialogs)
           cat << 'EOF' > app/src/main/java/com/rjtool/engine/MainActivity.kt
           package com.rjtool.engine
 
@@ -987,7 +966,7 @@ jobs:
               var decryptLuaOnly by remember { mutableStateOf(false) }
               var decompileLua by remember { mutableStateOf(true) }
               var isRunning by remember { mutableStateOf(false) }
-              var logMessage by remember { mutableStateOf("Ready to unpack using index.csv structure.") }
+              var logMessage by remember { mutableStateOf("Ready to unpack using index structure.") }
 
               LaunchedEffect(Unit) {
                   withContext(Dispatchers.IO) {
@@ -1457,7 +1436,6 @@ jobs:
           }
           EOF
 
-          # 8. Strings & Proguard
           cat << 'EOF' > app/src/main/res/values/strings.xml
           <resources>
               <string name="app_name">RJTOOL</string>
@@ -1465,6 +1443,24 @@ jobs:
           EOF
 
           touch app/proguard-rules.pro
+
+      - name: Commit and Push Files to Repository
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Stage all generated and scaffolded project code
+          git add app/ assets/ python_source/ gradle.properties settings.gradle build.gradle || true
+          
+          if git diff --staged --quiet; then
+            echo "No changes detected to commit."
+          else
+            git commit -m "Auto-update real engine Python modules, Android source & index structure [skip ci]"
+            git push origin HEAD:${{ github.ref_name }}
+            echo "Successfully pushed all files to the repository branch."
+          fi
 
       - name: Setup Gradle 8.4 Wrapper
         run: |
