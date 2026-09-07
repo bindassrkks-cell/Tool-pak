@@ -30,6 +30,17 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Validate and stage repository assets
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -d assets || { echo "ERROR: assets/ directory is missing"; exit 1; }
+          test -f assets/index.txt || { echo "ERROR: assets/index.txt is missing"; exit 1; }
+          echo "Asset index entries: $(wc -l < assets/index.txt)"
+          mkdir -p app/src/main/assets
+          cp -a assets/. app/src/main/assets/
+          find app/src/main/assets -type f | sort | head -n 20
+
       - name: Scaffold Complete Project Code
         run: |
           mkdir -p .github/workflows
@@ -1119,23 +1130,32 @@ jobs:
           chmod +x gradlew
           rm -rf /tmp/gradle-8.4 /tmp/gradle-8.4-bin.zip
 
-      - name: Commit and Push Project Code
+      - name: Verify generated project files
+        shell: bash
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if git diff-index --quiet HEAD; then
-            echo "No changes to commit."
-          else
-            git commit -m "Complete Dynamic Stream Carving & Deep Zstd Chunk Decompressor [skip ci]"
-            git push origin HEAD:${{ github.ref_name }}
-          fi
+          set -Eeuo pipefail
+          test -f settings.gradle
+          test -f build.gradle
+          test -f app/build.gradle
+          test -f app/src/main/python/pak_engine.py
+          test -f app/src/main/java/com/mcob/paktool/MainActivity.kt
+          echo "Generated Android project structure is present."
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK Artifact
+      - name: Prepare release bundle
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p release
+          cp app/build/outputs/apk/debug/app-debug.apk release/PAK-OBB-Tool-debug.apk
+          cp assets/index.txt release/assets-index.txt
+          sha256sum release/PAK-OBB-Tool-debug.apk release/assets-index.txt > release/SHA256SUMS.txt
+
+      - name: Upload APK and asset manifest
         uses: actions/upload-artifact@v4
         with:
-          name: PAK-OBB-Tool-FinalEngine-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: PAK-OBB-Tool-debug-${{ github.run_number }}
+          if-no-files-found: error
+          path: release/
