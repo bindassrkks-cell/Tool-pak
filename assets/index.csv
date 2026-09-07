@@ -1,0 +1,15 @@
+hash_id,version,relative_path,default_size
+01,4.5.0,ShadowTrackerExtra/1.txt,33
+02,4.5.0,ShadowTrackerExtra/DSxDEMON/daemon.cfg,1024
+03,4.5.0,ShadowTrackerExtra/Config/DefaultEngine.ini,2048
+04,4.5.0,ShadowTrackerExtra/Config/DefaultGame.ini,1536
+05,4.5.0,ShadowTrackerExtra/Content/BluePrints/Core/BP_PlayerPawn.uasset,250470
+06,4.5.0,ShadowTrackerExtra/Content/BluePrints/Core/BP_PlayerPawn.uexp,264570
+07,4.5.0,ShadowTrackerExtra/Content/BluePrints/Core/BP_PlayerPawn_AI.uasset,184320
+08,4.5.0,ShadowTrackerExtra/Content/BluePrints/Core/BP_PlayerPawn_Statue.uasset,163840
+09,4.5.0,ShadowTrackerExtra/Content/BluePrints/Core/BP_PlayerPawn_ZombieBase.uasset,204800
+10,4.5.0,ShadowTrackerExtra/Content/BluePrints/Core/BP_PlayerState.uasset,98304
+11,4.5.0,ShadowTrackerExtra/Content/Lua/client/slua/logic/push/LocalPushSystem.lua,4096
+12,4.5.0,ShadowTrackerExtra/Content/Lua/client/slua/logic/ui/LobbyUI.lua,8192
+13,4.5.0,ShadowTrackerExtra/Content/Lua/client/slua/logic/battle/FightLogic.lua,12288
+14,4.5.0,ShadowTrackerExtra/Content/Paks/game_patch_sub.uasset,65536

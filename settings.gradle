@@ -14,5 +14,5 @@ dependencyResolutionManagement {
         maven { url "https://chaquo.com/maven" }
     }
 }
-rootProject.name = "MCOB-PakTool"
+rootProject.name = "RJTOOL"
 include ':app'

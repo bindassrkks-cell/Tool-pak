@@ -5,15 +5,15 @@ plugins {
 }
 
 android {
-    namespace 'com.mcob.paktool'
+    namespace 'com.rjtool.engine'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.mcob.paktool"
+        applicationId "com.rjtool.engine"
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName "4.5"
+        versionCode 59
+        versionName "1.0.59"
 
         ndk {
             abiFilters "arm64-v8a", "armeabi-v7a"
@@ -24,12 +24,6 @@ android {
             pip {
                 install "pycryptodome"
                 install "zstandard"
-                install "gmalg"
-                install "requests"
-                install "colorama"
-                install "rich"
-                install "termcolor"
-                install "pyfiglet"
                 install "cryptography"
             }
         }
