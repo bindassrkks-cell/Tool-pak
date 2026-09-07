@@ -1,14 +1,18 @@
 package com.rjtool.engine
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -34,8 +38,9 @@ import com.chaquo.python.Python
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
 
 val DarkBg = Color(0xFF101214)
 val CardSurface = Color(0xFF191C1F)
@@ -43,6 +48,32 @@ val CardStroke = Color(0xFF262B30)
 val AccentTeal = Color(0xFF00BFA5)
 val AccentDarkTeal = Color(0xFF004D40)
 val TextGray = Color(0xFF8E959E)
+val AlertRed = Color(0xFFE53935)
+
+fun hasStoragePermission(context: Context): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        Environment.isExternalStorageManager()
+    } else {
+        context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+}
+
+fun scanLocalFiles(folderName: String, extensions: List<String>): List<String> {
+    val targetDir = File("/storage/emulated/0/RJTOOL", folderName)
+    if (!targetDir.exists()) targetDir.mkdirs()
+    val result = mutableListOf<String>()
+    try {
+        targetDir.walkTopDown().filter { it.isFile }.forEach { f ->
+            val rel = f.relativeTo(targetDir).path.replace('\\', '/')
+            if (extensions.isEmpty() || extensions.any { rel.endsWith(it, ignoreCase = true) }) {
+                result.add(rel)
+            }
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+    return result.sorted()
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,10 +92,15 @@ class MainActivity : ComponentActivity() {
     private fun requestStoragePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (!Environment.isExternalStorageManager()) {
-                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                    data = Uri.parse("package:$packageName")
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    startActivity(intent)
                 }
-                startActivity(intent)
             }
         }
     }
@@ -113,8 +149,10 @@ fun RJToolApp() {
 
 @Composable
 fun HomeScreen(onNavigate: (Screen) -> Unit, onExecuteFix: () -> Unit) {
+    val context = LocalContext.current
     val deviceModel = Build.MODEL
     val androidVer = Build.VERSION.RELEASE
+    val hasPerm = remember { mutableStateOf(hasStoragePermission(context)) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -139,8 +177,33 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onExecuteFix: () -> Unit) {
                         Text("TG @byrj6", color = TextGray, fontSize = 12.sp)
                     }
                 }
-                IconButton(onClick = { }) {
-                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = AccentTeal)
+                IconButton(onClick = { hasPerm.value = hasStoragePermission(context) }) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = AccentTeal)
+                }
+            }
+        }
+
+        if (!hasPerm.value) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                            context.startActivity(intent)
+                        }
+                    },
+                    colors = CardDefaults.cardColors(containerColor = AlertRed.copy(alpha = 0.2f)),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, AlertRed)
+                ) {
+                    Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = AlertRed)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text("Storage Permission Missing", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Tap here to allow All Files Access in Settings", color = TextGray, fontSize = 11.sp)
+                        }
+                    }
                 }
             }
         }
@@ -161,7 +224,7 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onExecuteFix: () -> Unit) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("/storage/emulated/0/RJTOOL", color = TextGray, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
                     Spacer(modifier = Modifier.height(10.dp))
-                    Text("Real UE4 Engine Active • Python 3.10", color = AccentTeal, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    Text("Fast Native Scanner Active • Python 3.10", color = AccentTeal, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -230,41 +293,65 @@ fun ItemChooserDialog(
     itemsList: List<String>,
     selectedItem: String,
     onSelect: (String) -> Unit,
+    onRefresh: () -> Unit,
+    onBrowseFile: (() -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title, color = Color.White, fontWeight = FontWeight.Bold) },
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                IconButton(onClick = onRefresh) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = AccentTeal)
+                }
+            }
+        },
         text = {
-            if (itemsList.isEmpty()) {
-                Text("No files detected in directory.", color = TextGray)
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 350.dp)) {
-                    items(itemsList) { item ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSelect(item); onDismiss() }
-                                .padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = (item == selectedItem),
-                                onClick = { onSelect(item); onDismiss() },
-                                colors = RadioButtonDefaults.colors(selectedColor = AccentTeal)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(item, color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (onBrowseFile != null) {
+                    Button(
+                        onClick = onBrowseFile,
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentDarkTeal),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Pick File from Phone", color = Color.White, fontSize = 12.sp)
+                    }
+                }
+                if (itemsList.isEmpty()) {
+                    Text("No files detected in directory.\nPlace file or click 'Pick File from Phone'.", color = TextGray, fontSize = 12.sp)
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
+                        items(itemsList) { item ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onSelect(item); onDismiss() }
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = (item == selectedItem),
+                                    onClick = { onSelect(item); onDismiss() },
+                                    colors = RadioButtonDefaults.colors(selectedColor = AccentTeal)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(item, color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                            }
                         }
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Confirm", color = AccentTeal) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = TextGray) }
+            TextButton(onClick = onDismiss) { Text("Close", color = AccentTeal) }
         },
         containerColor = CardSurface
     )
@@ -272,6 +359,7 @@ fun ItemChooserDialog(
 
 @Composable
 fun PakUnpackScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var detectedPaks by remember { mutableStateOf(listOf<String>()) }
     var selectedPak by remember { mutableStateOf("") }
@@ -281,30 +369,60 @@ fun PakUnpackScreen(onBack: () -> Unit) {
     var isRunning by remember { mutableStateOf(false) }
     var logMessage by remember { mutableStateOf("Ready to unpack using index structure.") }
 
+    fun reloadPaks() {
+        val files = scanLocalFiles("PAK_ORIGINAL", listOf(".pak", ".obb"))
+        detectedPaks = files
+        if (files.isNotEmpty() && (selectedPak.isEmpty() || !files.contains(selectedPak))) {
+            selectedPak = files[0]
+        }
+    }
+
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            try {
-                val py = Python.getInstance().getModule("rj_engine")
-                val listJson = py.callAttr("get_folder_files", "PAK_ORIGINAL", arrayOf(".pak", ".obb")).toString()
-                val arr = JSONArray(listJson)
-                val paks = mutableListOf<String>()
-                for (i in 0 until arr.length()) paks.add(arr.getString(i))
-                withContext(Dispatchers.Main) {
-                    detectedPaks = paks
-                    if (paks.isNotEmpty()) selectedPak = paks[0]
+        reloadPaks()
+    }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    var displayName = "game_patch.pak"
+                    context.contentResolver.query(it, null, null, null, null)?.use { cursor ->
+                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (cursor.moveToFirst() && nameIndex >= 0) {
+                            displayName = cursor.getString(nameIndex)
+                        }
+                    }
+                    val destFile = File("/storage/emulated/0/RJTOOL/PAK_ORIGINAL", displayName)
+                    destFile.parentFile?.mkdirs()
+                    context.contentResolver.openInputStream(it)?.use { input ->
+                        FileOutputStream(destFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Imported: $displayName", Toast.LENGTH_SHORT).show()
+                        reloadPaks()
+                        selectedPak = displayName
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Import error: " + e.localizedMessage, Toast.LENGTH_LONG).show()
+                    }
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
             }
         }
     }
 
     if (showChooser) {
         ItemChooserDialog(
-            title = "Choose PAK from PAK_ORIGINAL",
+            title = "Choose PAK File",
             itemsList = detectedPaks,
             selectedItem = selectedPak,
             onSelect = { selectedPak = it },
+            onRefresh = { reloadPaks() },
+            onBrowseFile = { filePickerLauncher.launch(arrayOf("*/*")) },
             onDismiss = { showChooser = false }
         )
     }
@@ -320,9 +438,9 @@ fun PakUnpackScreen(onBack: () -> Unit) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text("PAK_ORIGINAL", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    Text(if (selectedPak.isNotEmpty()) selectedPak else "None detected", color = TextGray, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    Text(if (selectedPak.isNotEmpty()) selectedPak else "None detected (Click Choose)", color = if (selectedPak.isNotEmpty()) AccentTeal else TextGray, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                 }
-                Button(onClick = { showChooser = true }, colors = ButtonDefaults.buttonColors(containerColor = AccentDarkTeal)) {
+                Button(onClick = { reloadPaks(); showChooser = true }, colors = ButtonDefaults.buttonColors(containerColor = AccentDarkTeal)) {
                     Text("Choose", color = Color.White, fontSize = 11.sp)
                 }
             }
@@ -350,7 +468,10 @@ fun PakUnpackScreen(onBack: () -> Unit) {
 
         Button(
             onClick = {
-                if (selectedPak.isEmpty()) return@Button
+                if (selectedPak.isEmpty()) {
+                    Toast.makeText(context, "Please choose a PAK file first!", Toast.LENGTH_SHORT).show()
+                    return@Button
+                }
                 isRunning = true
                 logMessage = "Unpacking real PAK chunks & index hierarchy..."
                 scope.launch(Dispatchers.IO) {
@@ -395,30 +516,22 @@ fun PakRepackScreen(onBack: () -> Unit) {
     var statusLog by remember { mutableStateOf("Ready to repack modified tree into authentic UE4 PAK") }
     var isProcessing by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            try {
-                val py = Python.getInstance().getModule("rj_engine")
-                val listJson = py.callAttr("get_folder_files", "PAK_ORIGINAL", arrayOf(".pak", ".obb")).toString()
-                val arr = JSONArray(listJson)
-                val paks = mutableListOf<String>()
-                for (i in 0 until arr.length()) paks.add(arr.getString(i))
-                withContext(Dispatchers.Main) {
-                    detectedPaks = paks
-                    if (paks.isNotEmpty()) selectedPak = paks[0]
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+    fun reload() {
+        detectedPaks = scanLocalFiles("PAK_ORIGINAL", listOf(".pak", ".obb"))
+        if (detectedPaks.isNotEmpty() && (selectedPak.isEmpty() || !detectedPaks.contains(selectedPak))) {
+            selectedPak = detectedPaks[0]
         }
     }
 
+    LaunchedEffect(Unit) { reload() }
+
     if (showChooser) {
         ItemChooserDialog(
-            title = "Choose PAK to Repack",
+            title = "Choose Target PAK",
             itemsList = detectedPaks,
             selectedItem = selectedPak,
             onSelect = { selectedPak = it },
+            onRefresh = { reload() },
             onDismiss = { showChooser = false }
         )
     }
@@ -436,7 +549,7 @@ fun PakRepackScreen(onBack: () -> Unit) {
                     Text("Target PAK", color = Color.White, fontWeight = FontWeight.Bold)
                     Text(if (selectedPak.isNotEmpty()) selectedPak else "None detected", color = AccentTeal, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                 }
-                Button(onClick = { showChooser = true }, colors = ButtonDefaults.buttonColors(containerColor = AccentDarkTeal)) {
+                Button(onClick = { reload(); showChooser = true }, colors = ButtonDefaults.buttonColors(containerColor = AccentDarkTeal)) {
                     Text("Choose", color = Color.White, fontSize = 11.sp)
                 }
             }
@@ -482,24 +595,15 @@ fun LuaToolScreen(isDecompile: Boolean, onBack: () -> Unit) {
     var showChooser by remember { mutableStateOf(false) }
     var statusLog by remember { mutableStateOf(if (isDecompile) "Disassembles raw bytecode into real function logic." else "Compiles Lua code into binary bytecode container.") }
 
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            try {
-                val py = Python.getInstance().getModule("rj_engine")
-                val folder = if (isDecompile) "LUA_ORIGINAL" else "LUA_UNPACK"
-                val listJson = py.callAttr("get_folder_files", folder, arrayOf(".lua", ".luac")).toString()
-                val arr = JSONArray(listJson)
-                val files = mutableListOf<String>()
-                for (i in 0 until arr.length()) files.add(arr.getString(i))
-                withContext(Dispatchers.Main) {
-                    detectedFiles = files
-                    if (files.isNotEmpty()) selectedFile = files[0]
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+    fun reload() {
+        val folder = if (isDecompile) "LUA_ORIGINAL" else "LUA_UNPACK"
+        detectedFiles = scanLocalFiles(folder, listOf(".lua", ".luac"))
+        if (detectedFiles.isNotEmpty() && (selectedFile.isEmpty() || !detectedFiles.contains(selectedFile))) {
+            selectedFile = detectedFiles[0]
         }
     }
+
+    LaunchedEffect(Unit) { reload() }
 
     if (showChooser) {
         ItemChooserDialog(
@@ -507,6 +611,7 @@ fun LuaToolScreen(isDecompile: Boolean, onBack: () -> Unit) {
             itemsList = detectedFiles,
             selectedItem = selectedFile,
             onSelect = { selectedFile = it },
+            onRefresh = { reload() },
             onDismiss = { showChooser = false }
         )
     }
@@ -524,7 +629,7 @@ fun LuaToolScreen(isDecompile: Boolean, onBack: () -> Unit) {
                     Text("Target File", color = Color.White, fontWeight = FontWeight.Bold)
                     Text(if (selectedFile.isNotEmpty()) selectedFile else "None detected", color = AccentTeal, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                 }
-                Button(onClick = { showChooser = true }, colors = ButtonDefaults.buttonColors(containerColor = AccentDarkTeal)) {
+                Button(onClick = { reload(); showChooser = true }, colors = ButtonDefaults.buttonColors(containerColor = AccentDarkTeal)) {
                     Text("Choose", color = Color.White, fontSize = 11.sp)
                 }
             }
@@ -563,23 +668,14 @@ fun SizeFixerScreen(onBack: () -> Unit) {
     var showChooser by remember { mutableStateOf(false) }
     var resultLog by remember { mutableStateOf("Matches RESULT_PAK byte size with PAK_ORIGINAL to prevent game crash.") }
 
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            try {
-                val py = Python.getInstance().getModule("rj_engine")
-                val listJson = py.callAttr("get_folder_files", "RESULT_PAK", arrayOf(".pak", ".obb")).toString()
-                val arr = JSONArray(listJson)
-                val paks = mutableListOf<String>()
-                for (i in 0 until arr.length()) paks.add(arr.getString(i))
-                withContext(Dispatchers.Main) {
-                    detectedPaks = paks
-                    if (paks.isNotEmpty()) selectedPak = paks[0]
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+    fun reload() {
+        detectedPaks = scanLocalFiles("RESULT_PAK", listOf(".pak", ".obb"))
+        if (detectedPaks.isNotEmpty() && (selectedPak.isEmpty() || !detectedPaks.contains(selectedPak))) {
+            selectedPak = detectedPaks[0]
         }
     }
+
+    LaunchedEffect(Unit) { reload() }
 
     if (showChooser) {
         ItemChooserDialog(
@@ -587,6 +683,7 @@ fun SizeFixerScreen(onBack: () -> Unit) {
             itemsList = detectedPaks,
             selectedItem = selectedPak,
             onSelect = { selectedPak = it },
+            onRefresh = { reload() },
             onDismiss = { showChooser = false }
         )
     }
@@ -604,7 +701,7 @@ fun SizeFixerScreen(onBack: () -> Unit) {
                     Text("Target PAK", color = Color.White, fontWeight = FontWeight.Bold)
                     Text(if (selectedPak.isNotEmpty()) selectedPak else "None detected", color = AccentTeal, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                 }
-                Button(onClick = { showChooser = true }, colors = ButtonDefaults.buttonColors(containerColor = AccentDarkTeal)) {
+                Button(onClick = { reload(); showChooser = true }, colors = ButtonDefaults.buttonColors(containerColor = AccentDarkTeal)) {
                     Text("Choose", color = Color.White, fontSize = 11.sp)
                 }
             }
@@ -644,23 +741,14 @@ fun HexEditorScreen(onBack: () -> Unit) {
     var multiplier by remember { mutableStateOf("2.5") }
     var statusLog by remember { mutableStateOf("Injects IEEE-754 float headshot multiplier into asset binaries.") }
 
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            try {
-                val py = Python.getInstance().getModule("rj_engine")
-                val listJson = py.callAttr("get_folder_files", "PAK_UNPACK", arrayOf(".uexp", ".uasset")).toString()
-                val arr = JSONArray(listJson)
-                val assets = mutableListOf<String>()
-                for (i in 0 until arr.length()) assets.add(arr.getString(i))
-                withContext(Dispatchers.Main) {
-                    detectedAssets = assets
-                    if (assets.isNotEmpty()) targetFile = assets[0]
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+    fun reload() {
+        detectedAssets = scanLocalFiles("PAK_UNPACK", listOf(".uexp", ".uasset"))
+        if (detectedAssets.isNotEmpty() && (targetFile.isEmpty() || !detectedAssets.contains(targetFile))) {
+            targetFile = detectedAssets[0]
         }
     }
+
+    LaunchedEffect(Unit) { reload() }
 
     if (showChooser) {
         ItemChooserDialog(
@@ -668,6 +756,7 @@ fun HexEditorScreen(onBack: () -> Unit) {
             itemsList = detectedAssets,
             selectedItem = targetFile,
             onSelect = { targetFile = it },
+            onRefresh = { reload() },
             onDismiss = { showChooser = false }
         )
     }
@@ -683,7 +772,7 @@ fun HexEditorScreen(onBack: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Target Asset", color = Color.White, fontWeight = FontWeight.Bold)
-                    Button(onClick = { showChooser = true }, colors = ButtonDefaults.buttonColors(containerColor = AccentDarkTeal)) {
+                    Button(onClick = { reload(); showChooser = true }, colors = ButtonDefaults.buttonColors(containerColor = AccentDarkTeal)) {
                         Text("Choose", color = Color.White, fontSize = 11.sp)
                     }
                 }

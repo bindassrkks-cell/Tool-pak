@@ -26,11 +26,15 @@ def get_folder_files(folder_key, extensions=None):
     target_dir = DIRS.get(folder_key, os.path.join(BASE_DIR, folder_key))
     if not os.path.exists(target_dir):
         return json.dumps([])
+    ext_list = []
+    if extensions:
+        for e in extensions:
+            ext_list.append(str(e).lower())
     files = []
     for root, _, fs in os.walk(target_dir):
         for f in fs:
-            if extensions:
-                if any(f.lower().endswith(ext.lower()) for ext in extensions):
+            if ext_list:
+                if any(f.lower().endswith(ext) for ext in ext_list):
                     files.append(os.path.relpath(os.path.join(root, f), target_dir))
             else:
                 files.append(os.path.relpath(os.path.join(root, f), target_dir))
