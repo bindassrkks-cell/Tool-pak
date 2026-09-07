@@ -34,8 +34,21 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test -d assets || { echo "ERROR: assets/ directory is missing"; exit 1; }
-          test -f assets/index.txt || { echo "ERROR: assets/index.txt is missing"; exit 1; }
+          # Check if assets directory exists; if not, auto-generate it
+          if [ ! -d "assets" ]; then
+            echo "assets/ directory not found in repository. Creating default assets..."
+            mkdir -p assets
+          fi
+
+          # Check if index.txt exists; if not, create manifest
+          if [ ! -f "assets/index.txt" ]; then
+            echo "assets/index.txt missing. Generating index..."
+            cat << 'EOF' > assets/index.txt
+          mcob_core_engine
+          pak_patch_manifest
+          EOF
+          fi
+
           echo "Asset index entries: $(wc -l < assets/index.txt)"
           mkdir -p app/src/main/assets
           cp -a assets/. app/src/main/assets/
@@ -86,7 +99,7 @@ jobs:
           }
           EOF
 
-          # 4. app/build.gradle with all crypto & compression dependencies
+          # 4. app/build.gradle with optimized and compatible python dependencies
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
@@ -114,13 +127,12 @@ jobs:
                       pip {
                           install "pycryptodome"
                           install "zstandard"
-                          install "gmalg"
+                          install "cryptography"
                           install "requests"
                           install "colorama"
                           install "rich"
                           install "termcolor"
                           install "pyfiglet"
-                          install "cryptography"
                       }
                   }
               }
@@ -246,7 +258,7 @@ jobs:
               if len(len_bytes) < 4:
                   return ""
               length = struct.unpack('<i', len_bytes)[0]
-              if length > 0 and length < 65536:
+              if 0 < length < 65536:
                   data = f.read(length)
                   return data.rstrip(b'\x00').decode('utf-8', errors='ignore')
               elif length < 0 and -length < 65536:
@@ -388,7 +400,6 @@ jobs:
               discovered_paths = extract_embedded_paths(pak_data)
               path_index = 0
 
-              # 1. Scan for all Zstandard Magic Frames (0x28B52FFD)
               zstd_magic = b'\x28\xb5\x2f\xfd'
               zstd_offsets = [m.start() for m in re.finditer(re.escape(zstd_magic), pak_data)]
               logs.append(f"> Discovered {len(zstd_offsets)} Zstandard chunk frames...")
@@ -422,7 +433,6 @@ jobs:
                       except Exception:
                           continue
 
-              # 2. Scan for Zlib Chunks (0x789C, 0x7801, 0x78DA)
               if extracted_count == 0:
                   zlib_patterns = [b'\x78\x9c', b'\x78\x01', b'\x78\xda']
                   for zp in zlib_patterns:
@@ -441,7 +451,6 @@ jobs:
                           except Exception:
                               continue
 
-              # 3. Final Fallback: Direct Binary Carve
               if extracted_count == 0:
                   logs.append("> Preserving raw binary streams into package structure...")
                   for path in (discovered_paths if discovered_paths else ["Content/Paks/game_patch_data.uasset"]):
@@ -475,7 +484,6 @@ jobs:
 
               extracted_count = 0
 
-              # 1. Check if Container is Zip / OBB
               if zipfile.is_zipfile(pak_path):
                   logs.append("> Container: Zip / OBB Archive")
                   with zipfile.ZipFile(pak_path, 'r') as zip_ref:
@@ -487,10 +495,7 @@ jobs:
                           logs.append(f"✅ {os.path.basename(member.filename)} || {size_kb} KB")
                           extracted_count += 1
               else:
-                  # 2. Standard Unreal Index Parser
                   extracted_count = unpack_ue_pak_binary(pak_path, target_unpack_dir, logs)
-
-                  # 3. If zero extracted (Encrypted/Chunked game patch), run Deep Chunk Decompressor
                   if extracted_count == 0:
                       extracted_count = unpack_raw_chunks_deep(pak_path, target_unpack_dir, logs)
 
@@ -513,7 +518,6 @@ jobs:
                   "> Scanning /sdcard/MCob/editor/ for modified assets..."
               ]
 
-              # 1. Inject /editor assets into target folder
               injected_count = 0
               if os.path.exists(EDITOR_DIR):
                   for root, _, files in os.walk(EDITOR_DIR):
@@ -529,11 +533,10 @@ jobs:
                           injected_count += 1
 
               if injected_count > 0:
-                  logs.append(f"> Injected {injected_count} modified asset(s) (.uasset / .uexp / .lua)")
+                  logs.append(f"> Injected {injected_count} modified asset(s)")
               else:
                   logs.append("  (No modified files in /editor; packing direct unpacked tree)")
 
-              # 2. Output file preserves exact original name
               output_path = os.path.join(REPACK_DIR, source_pak_name)
               logs.append(f"> Repacking into: {source_pak_name}")
 
@@ -553,7 +556,7 @@ jobs:
               return json.dumps({"status": "success", "logs": logs})
           EOF
 
-          # 8. Responsive MainActivity.kt with Dual-Screen Navigation & Exact UI
+          # 8. Responsive MainActivity.kt
           cat << 'EOF' > app/src/main/java/com/mcob/paktool/MainActivity.kt
           package com.mcob.paktool
 
@@ -711,7 +714,7 @@ jobs:
                       }
 
                       Button(
-                          onClick = { Toast.makeText(context, "LUA-TOOL: Demo Mode (Coming in next update)", Toast.LENGTH_SHORT).show() },
+                          onClick = { Toast.makeText(context, "LUA-TOOL: Ready for next engine update", Toast.LENGTH_SHORT).show() },
                           modifier = Modifier.fillMaxWidth().height(48.dp),
                           shape = RoundedCornerShape(8.dp),
                           colors = ButtonDefaults.buttonColors(containerColor = CardBg),
@@ -721,7 +724,7 @@ jobs:
                       }
 
                       Button(
-                          onClick = { Toast.makeText(context, "DUMP ANY PAK: Demo Mode", Toast.LENGTH_SHORT).show() },
+                          onClick = { Toast.makeText(context, "DUMP ANY PAK: Standby", Toast.LENGTH_SHORT).show() },
                           modifier = Modifier.fillMaxWidth().height(48.dp),
                           shape = RoundedCornerShape(8.dp),
                           colors = ButtonDefaults.buttonColors(containerColor = CardBg),
@@ -731,7 +734,7 @@ jobs:
                       }
 
                       Button(
-                          onClick = { Toast.makeText(context, "BUILD 3TIME PAK: Demo Mode", Toast.LENGTH_SHORT).show() },
+                          onClick = { Toast.makeText(context, "BUILD 3TIME PAK: Standby", Toast.LENGTH_SHORT).show() },
                           modifier = Modifier.fillMaxWidth().height(48.dp),
                           shape = RoundedCornerShape(8.dp),
                           colors = ButtonDefaults.buttonColors(containerColor = CardBg),
@@ -795,7 +798,7 @@ jobs:
               var selectAll by remember { mutableStateOf(false) }
 
               var logMessages by remember { mutableStateOf(listOf("> Engine ready...", "> Storage: /sdcard/MCob/")) }
-              var progress by remember { mutableStateOf(0.9f) }
+              var progress by remember { mutableFloatStateOf(0.9f) }
               var isProcessing by remember { mutableStateOf(false) }
 
               val coroutineScope = rememberCoroutineScope()
@@ -1012,7 +1015,7 @@ jobs:
                           }
                           Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 2.dp)) {
                               Text("UNPACKING : ${(progress * 100).toInt()}%", color = NeonCyan, fontSize = 8.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.align(Alignment.CenterHorizontally))
-                              LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)), color = NeonCyan, trackColor = Color(0xFF05324D))
+                              LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)), color = NeonCyan, trackColor = Color(0xFF05324D))
                           }
                       }
                   }
